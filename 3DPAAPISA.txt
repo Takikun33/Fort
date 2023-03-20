@@ -1,0 +1,3318 @@
+c********************************************************************
+C    INITIAL SHAPE ANALYSIS OF STEEL CABLE-STAYED BRIDGE 
+C
+C    NONLINEAR ELASTIC ANALYSIS USING FRAME ELEMENT AND CABLE ELEMENT
+C
+C    DATE : 2004.02.XX
+C********************************************************************
+
+      PROGRAM PAAP3D
+
+      IMPLICIT DOUBLE PRECISION (A-H,O-Z)
+
+      PARAMETER(MTOTV=6000,MPOIN=900,MGRUP=2,MELEM=3000,MEVAB=12,
+     +          MINCS=50,MSTIF=20000000,
+     +          MNODE=2,MDOFN=6,MPROP=20,MMATS=500,MDIME=3,MLOAD=1000)
+                          
+      DIMENSION ASTIF(20000000),IFFIX(MTOTV)
+      DIMENSION NOLOD(MLOAD),NOLCS(MLOAD),RLOAD(MDOFN,MLOAD)
+      DIMENSION EFAIL(6,MELEM)
+
+      DIMENSION TDISP(MTOTV),ASDIS(MTOTV)
+      DIMENSION PLOAD(MTOTV),ASLOD(MTOTV)
+      DIMENSION TLOAD(12,MELEM),ELOAD(12,MELEM)
+	DIMENSION AAA(10,1)                          ! S.S.MA 03.12.22
+
+      CHARACTER INFILE*20,OUTFILE*20
+
+      WRITE(*,*) 'INPUT FILE NAME '
+
+      READ(*,11) INFILE
+  11  FORMAT(A8)
+
+      LOC=INDEX(INFILE,' ')
+
+      OPEN(5,FILE=INFILE)
+
+      IF (LOC.NE.0) THEN
+
+        OUTFILE=INFILE(:LOC-1)//'.ERR'
+        OPEN(6,FILE=OUTFILE)
+
+        OUTFILE=INFILE(:LOC-1)//'.TMP'
+        OPEN(10,FILE=OUTFILE)
+
+        OUTFILE=INFILE(:LOC-1)//'.TED'
+        OPEN(11,FILE=OUTFILE)
+
+        OUTFILE=INFILE(:LOC-1)//'.BED'
+        OPEN(12,FILE=OUTFILE,FORM='BINARY')
+
+        OUTFILE=INFILE(:LOC-1)//'.TSOEID'
+        OPEN(13,FILE=OUTFILE)
+
+        OUTFILE=INFILE(:LOC-1)//'.BSO'
+        OPEN(14,FILE=OUTFILE,FORM='BINARY')
+
+        OUTFILE=INFILE(:LOC-1)//'.TEF'
+        OPEN(15,FILE=OUTFILE)
+
+        OUTFILE=INFILE(:LOC-1)//'.BEF'
+        OPEN(16,FILE=OUTFILE,FORM='BINARY')
+
+        OUTFILE=INFILE(:LOC-1)//'.INIFOR'  ! S.S.MA 03.12.22 
+        OPEN(19,FILE=OUTFILE)			     
+
+        OUTFILE=INFILE(:LOC-1)//'.SECANT'   ! S.S.MA 03.12.24 
+        OPEN(20,FILE=OUTFILE)			     
+
+        OUTFILE=INFILE(:LOC-1)//'.INIDISP' ! S.S.MA 04.01.13 
+        OPEN(21,FILE=OUTFILE)			     
+
+	  OUTFILE=INFILE(:LOC-1)//'.NSIOUT'  ! S.S.MA 04.02.04 
+        OPEN(23,FILE=OUTFILE)			     
+
+        OUTFILE=INFILE(:LOC-1)//'.TSOREAL' ! S.S.MA 04.03.17 
+        OPEN(24,FILE=OUTFILE)
+
+	ENDIF					   ! S.S.MA   03.12.19
+
+C********************************************************************
+C     초기부재력값이 첫해석시에는 작용하지 않으므로, 모두 '0'로 둔다.
+C********************************************************************
+	DO 191 IJ=1,6
+	AAA(IJ,1)=0.0D0
+  191 CONTINUE
+
+	DO 190 I=1,2000		!INITIALIZE INITIAL ELEMENT FORCE S.S.MA  03.12.22
+	                    !AND DISPLACEMENT  S.S.MA  04.01.13
+	INIS=I
+
+	WRITE(19,119) INIS,(AAA(ISS,1),ISS=1,6)
+	WRITE(21,119) INIS,(AAA(ISS,1),ISS=1,6) 	! S.S.MA  04.01.13	   
+  190 CONTINUE				   
+  119 FORMAT(I5,6E12.5)
+
+      WRITE(*,*) 'SUMMATION OF TOTAL DISP.(CONTROL)=' ! S.S.MA  04.01.14		
+	read(*,*)CONTROL
+
+      WRITE(23,261) CONTROL ! S.S.MA  04.02.04		
+  261 FORMAT(/,60('*'),/,' CONTROL VALUE FOR END OF INITIAL SHAPE = ',
+     +       E12.5,/,60('*'),/)
+	
+C********************************************************************
+C********************************************************************
+	  DO 100 IAGAIN=1,500	   ! S.S.MA  03.12.19
+C********************************************************************
+C********************************************************************
+
+        REWIND 5
+        REWIND 6
+        REWIND 10
+        REWIND 11
+        REWIND 12
+        REWIND 13
+        REWIND 14
+        REWIND 15
+        REWIND 16
+	  REWIND 19    !S.S.MA  03.12.22
+	  REWIND 21    !S.S.MA  04.01.13
+	  REWIND 24    !S.S.MA  04.03.17
+
+  	  IIAGA=IIAGA+1								  !S.S.MA  03.12.24
+	WRITE(20,222) IIAGA                     	  !S.S.MA  03.12.24
+  222 FORMAT(/,40('*'),/,' AGAIN NONLINEAR ANALYSIS = ',I3,/,40('*'),/)
+
+	WRITE(23,263) IAGAIN                     	  !S.S.MA  03.02.04
+  263 FORMAT(/,40('*'),/,' NUMBER OF SHAPE ITERATION = ',I3,/,40('*'),/)
+
+      CALL INDATA(IFFIX,MTOTV,MDIME,MPOIN,TDISP,TLOAD,ELOAD,
+     +            MPROP,MMATS,MELEM,NTOTV,MDOFN,MEVAB,
+     +            NEQNS,NOLCS,NOLOD,RLOAD,MLOAD,NLOAD,NINCS,
+     +            NANAL,FACTO,MDIST,NPOIN,PLOAD,NCASE)
+
+	CALL RNULV2(TLOAD,12,MELEM)	   ! S.S.MA 03.12.19  변수조심! 
+	CALL RNULV2(ELOAD,12,MELEM)	   ! S.S.MA 03.12.19  변수가 잘못되면
+	CALL RNULV2(EFAIL,6,MELEM)	   ! S.S.MA 03.12.19  부재력과 변위가 
+
+	CALL RNULV1(TDISP,MTOTV)	   ! S.S.MA 03.12.19  초기화 되지 
+	CALL RNULV1(PLOAD,MTOTV)	   ! S.S.MA 03.12.19  않는다.
+
+      LCASE=1
+
+      TOTLO=0.0D0
+
+      DO 500 IINCS=1,NINCS
+
+	WRITE(20,223) IINCS                     	  !S.S.MA  03.12.24
+  223 FORMAT(20('-'),/,'NONLINEAR ITERATION NUMBER = ',I3,/,20('-'))
+
+      CALL INCLOD(IFFIX,ASLOD,ASDIS,NOLCS,NOLOD,RLOAD,MTOTV,
+     +            MLOAD,NLOAD,MDOFN,TOTLO,FACTO,LCASE)
+
+      DETER=1.0
+
+      CALL STIF11(NANAL,TDISP,TLOAD,ASTIF,NEQNS,MDIST,EFAIL)
+
+      IF(NANAL.EQ.1) CALL KVDET(ASTIF,NEQNS,MDIST,DETER,KSC,MSTIF)
+        
+      CALL BANRED(ASTIF,NEQNS,MDIST)
+
+      CALL VECCOP(ASLOD,ASDIS,NEQNS)
+
+      CALL BACSUB(ASTIF,ASDIS,NEQNS,MDIST)
+
+      CALL RESI11(NANAL,TDISP,ASDIS,TLOAD,ELOAD,TOTLO,EFAIL,
+	+            IINCS)              !S.S.MA 04.03.26       
+
+      CALL RESULT(TDISP,ASDIS,TLOAD,ELOAD,DETER,MEVAB,NEQNS,NPOIN,
+     +            NTOTV,IFFIX,ASLOD,IINCS,FACTO,TOTLO,PLOAD,INIEND,
+     +            CONTROL)                                 !S.S.MA
+
+  500 CONTINUE
+
+	 IF(INIEND.EQ.1) GOTO 110
+
+  100 CONTINUE			  ! S.S.MA 03.12.19
+
+  110 CLOSE(5)
+      CLOSE(6)
+
+      CLOSE(10)
+      CLOSE(11)
+      CLOSE(12)
+      CLOSE(13)
+      CLOSE(14)
+      CLOSE(15)
+      CLOSE(16)
+	CLOSE(19)    !S.S.MA 03.12.19
+	CLOSE(20)    !S.S.MA 03.12.24
+	CLOSE(21)    !S.S.MA 04.01.13
+	CLOSE(24)    !S.S.MA 04.03.17
+
+      STOP
+      END
+
+
+C********************************************************************
+      SUBROUTINE INDATA(IFFIX,MTOTV,MDIME,MPOIN,TDISP,TLOAD,ELOAD,
+     +                  MPROP,MMATS,MELEM,NTOTV,MDOFN,MEVAB,
+     +                  NEQNS,NOLCS,NOLOD,RLOAD,MLOAD,NLOAD,NINCS,
+     +                  NANAL,FACTO,MDIST,NPOIN,
+     +                  PLOAD,NCASE)
+C********************************************************************
+C *** THIS SUBROUTINE IS TO READ DATA FROM INPUT FILE
+
+C     IFFIX     CODE FOR DEGREE OF FREEDOM IN THE STRUCTURE
+C     MTOTV     MAXIMUM NUMBER OF EQUATION NUMBER(=MEVAB)
+C     MDIME     MAXIMUM ORDER OF DIMENSION
+C     MPOIN     MAXIMUM NUMBER OF JOINTS
+C     TDISP     TOTAL DISPLACEMENT VECTOR
+C     TLOAD     TOTAL LOAD VECTOR
+C     IGN,JYN   SOLUTION INDEX
+C     NEQNS     NUMBER OF EQUATION
+C     NOLOD     NODE NUMBER ASSOCIATED WITH NODAL LOAD
+C     NOLCS     LOAD CASE NUMBER ASSOCIATED WITH NODAL LOAD
+C     RLOAD     NODAL LOAD RELATED TO THE DEGREES OF FREEDOM OF NODE
+C     MLOAD     MAXIMUM NUMBER OF NODAL LOAD
+C     NLOAD     NUMBER OF NODAL LOAD
+C     FACTO     THE MAGNITUDE OF ANY LOAD INCREMENT
+C     NINCS     MAXIMUM NUMBER OF INCREMENTS
+C               IN WHICH THE TOTAL LOADING IS TO BE APPLIED
+C     NITER     MAXIMUM PERMISSIBLE NUMBER OF ITERATIONS PER EACH STEP
+C     MDIST     MAXIMUM NUMBER OF BANDED WIDTH
+C     TOLER     TOLERANCE PERMITTED ON THE CONVERGENCE PROCESS
+
+      IMPLICIT DOUBLE PRECISION (A-H,O-Z)
+
+      DIMENSION IFFIX(*),TDISP(*),TLOAD(MEVAB,*)
+      DIMENSION ELOAD(MEVAB,*)
+      DIMENSION NOLOD(MLOAD),NOLCS(MLOAD),RLOAD(MDOFN,MLOAD)
+
+      DIMENSION NOPOI(MPOIN),COORD(MDIME,MPOIN)
+      DIMENSION NOFIX(MPOIN),IFPRE(MDOFN,MPOIN)
+      DIMENSION PROPS(MPROP,MMATS)
+      DIMENSION NOELE(MELEM),LPCOD(MELEM),MATNO(MELEM)
+      DIMENSION LNOD1(2,MELEM),LDOF1(12,MELEM),LTYPE(7,MELEM)
+      DIMENSION ELCOD(3,3),PLOAD(*)
+
+      CHARACTER XXLINE*250
+
+C *** INITIALIZE DATA
+
+      DO 191 ITOTV=1,MTOTV
+
+        IFFIX(ITOTV)=-9
+
+        TDISP(ITOTV)=0.0D0
+        PLOAD(ITOTV)=0.0D0
+
+  191 CONTINUE
+
+      DO 291 IELEM=1,MELEM
+      DO 291 IEVAB=1,MEVAB
+
+        TLOAD(IEVAB,IELEM)=0.0D0
+        ELOAD(IEVAB,IELEM)=0.0D0
+
+  291 CONTINUE
+
+      NPOIN=0
+      NVFIX=0
+      NVPRE=0
+      NLOAD=0
+      INDEX=0
+      INFRM=0
+      INASD=0
+      NELEM=0
+
+      NEVAB=12
+
+C *** READ DATA FROM INPUT FILE (FILE HANDLE 5 - SAP90 FORMAT)
+
+      REWIND 5
+
+      CALL GETLINE(XXLINE)
+
+      DO WHILE (.NOT.(EOF(5)))
+
+C *** READ DATA BLOCK LINE
+
+        CALL GETDEX(XXLINE,INDEX)
+
+        IF(INDEX.EQ.1.AND.(.NOT.EOF(5)))THEN
+
+C *** READ SYSTEM DATA BLOCK
+
+         CALL SYSTEM(XXLINE,NINCS,NANAL,FACTO,NCASE)
+
+        ELSE IF(INDEX.EQ.2.AND.(.NOT.EOF(5)))THEN
+
+C *** READ JOINTS DATA BLOCK
+
+         CALL JOINTS(XXLINE,NOPOI,COORD,MDIME,NPOIN)
+
+        ELSE IF(INDEX.EQ.3.AND.(.NOT.EOF(5)))THEN
+
+C *** READ RESTRAINTS DATA BLOCK
+
+         CALL RESTRAINTS(XXLINE,NOFIX,IFPRE,MDOFN,NVFIX)
+
+        ELSE IF(INDEX.EQ.4.AND.(.NOT.EOF(5)))THEN
+
+C *** READ FRAME DATA BLOCK
+
+         INFRM=INFRM+1
+
+         IF(INFRM.EQ.1)THEN
+
+           CALL FRAME1(XXLINE,PROPS,MPROP,MMATS)
+
+         ELSE
+
+           CALL FRAME2(NANAL,XXLINE,NOELE,MATNO,LNOD1,LPCOD,LDOF1,
+     +                 LTYPE,MELEM,NELEM)
+
+         END IF
+
+        ELSE IF(INDEX.EQ.5.AND.(.NOT.EOF(5)))THEN
+
+C *** READ LOADS DATA BLOCK
+
+          CALL LOADS(XXLINE,NOLOD,NOLCS,RLOAD,MDOFN,NLOAD)
+
+        END IF
+
+C *** SETTING IFFIX AND LDOF1 VECTOR
+
+        IF(INFRM.GT.1.AND.INDEX.NE.4)THEN  ! FRAME
+
+          NNODE=2
+          NDOFN=6
+
+          DO 100 IELEM=1,NELEM
+          DO 100 INODE=1,NNODE
+
+            LNODE=LNOD1(INODE,IELEM)
+
+            DO 100 IDOFN=1,NDOFN
+
+              NGASH=(LNODE-1)*MDOFN+IDOFN
+              NGISH=(INODE-1)*MDOFN+IDOFN
+
+               IVALU=LDOF1(NGISH,IELEM)  ! IVALU=1 RELEASE CODE
+
+               IF(IVALU.EQ.0) IFFIX(NGASH)= 0
+               IF(IVALU.EQ.1) LDOF1(NGISH,IELEM)=-1
+
+  100     CONTINUE
+
+        END IF
+
+      END DO
+
+C *** THIS LOOP IS TO SET DEGREE OF FREEDOM AUTOMATICALLY
+
+      NTOTV=NPOIN*NDOFN
+
+      DO 300 IVFIX=1,NVFIX
+      DO 300 IDOFN=1,MDOFN
+
+        NGASH=(NOFIX(IVFIX)-1)*MDOFN+IDOFN
+
+        IVALU=IFPRE(IDOFN,IVFIX)
+        JVALU=IFFIX(NGASH)
+           
+        IF(IVALU.EQ.1.AND.JVALU.EQ.0) IFFIX(NGASH)=1
+
+  300 CONTINUE
+
+      NEQNS=0
+
+      DO 400 ITOTV=1,NTOTV
+
+        IF(IFFIX(ITOTV).EQ.0)THEN
+
+          NEQNS=NEQNS+1
+
+          IFFIX(ITOTV)=NEQNS
+
+        ELSE 
+
+          IFFIX(ITOTV)=0
+
+        END IF
+
+  400 CONTINUE
+
+      DO 700 IELEM=1,NELEM
+
+      DO 600 INODE=1,NNODE
+
+        LNODE=LNOD1(INODE,IELEM)
+
+        DO 600 IDOFN=1,NDOFN
+
+          NGASH=(LNODE-1)*MDOFN+IDOFN
+          NGISH=(INODE-1)*MDOFN+IDOFN
+
+          IVALU=IFFIX(NGASH)
+          JVALU=LDOF1(NGISH,IELEM)
+
+          IF(IVALU.GT.0.AND.JVALU.EQ.0) LDOF1(NGISH,IELEM)=IVALU
+
+  600 CONTINUE
+
+  700 CONTINUE
+
+      NDIME=3
+
+C *** THIS LOOP IS TO STORE ELEMENT DATA TO TEMPORARY FILE
+
+      PI=3.141592653589793238462643D0
+
+      WRITE(12) NELEM,NEVAB,NNODE,NDOFN,NDIME
+      WRITE(14) NPOIN
+      WRITE(16) NELEM
+
+      DO 1000 IELEM=1,NELEM
+
+        DO 800 INODE=1,NNODE
+
+          LNODE=LNOD1(INODE,IELEM)
+
+          DO 800 IDIME=1,NDIME
+
+           ELCOD(IDIME,INODE)=COORD(IDIME,LNODE)
+
+  800   CONTINUE
+
+        IF(LPCOD(IELEM).GT.0)THEN
+
+          DO 900 IDIME=1,NDIME
+
+            ELCOD(IDIME,3)=COORD(IDIME,LPCOD(IELEM))
+
+  900     CONTINUE
+
+        ELSE
+
+          ELCOD(1,3)=LPCOD(IELEM)
+          ELCOD(2,3)=9
+          ELCOD(3,3)=17
+
+        END IF
+
+        XL=ELCOD(1,2)-ELCOD(1,1)  ! ELCOD(1,2,3-COORDINATE,I,J-NODE)
+        YL=ELCOD(2,2)-ELCOD(2,1)
+        ZL=ELCOD(3,2)-ELCOD(3,1)
+
+        AL=DSQRT(XL**2.0D0+YL**2.0D0+ZL**2.0D0)
+
+        LPROP=MATNO(IELEM)
+
+        PY=PROPS(1,LPROP)*PROPS(9,LPROP)
+
+        EIZ=PROPS(2,LPROP)*PROPS(5,LPROP)
+        EIY=PROPS(3,LPROP)*PROPS(5,LPROP)
+
+        EI=MIN(EIZ,EIY)
+
+        SLEND=DSQRT(PY/EI)*AL/PI
+
+        IF(SLEND.LE.1.5D0)THEN
+
+          PT=DEXP(-0.419D0*SLEND**2)*PY
+
+        ELSE IF (SLEND.GT.1.5D0) THEN
+
+          PT=0.877D0*PY/SLEND**2
+
+        ENDIF
+
+        PROPS(12,LPROP)=-PT
+
+        CALL FSAVE(IELEM,LPROP,LNOD1(1,IELEM),LDOF1(1,IELEM),ELCOD,
+     +             PROPS(1,LPROP),LTYPE(1,IELEM))
+
+ 1000 CONTINUE
+
+      MDIST=0
+
+      DO 1200 IELEM=1,NELEM
+
+      DO 1200 IEVAB=1,NEVAB
+
+      IF(LDOF1(IEVAB,IELEM).GT.0) THEN
+
+        IDIST=LDOF1(IEVAB,IELEM)
+
+        DO 1100 JEVAB=IEVAB+1,NEVAB
+
+         IF(LDOF1(JEVAB,IELEM).GT.0) ITMIN=MIN(IDIST,LDOF1(JEVAB,IELEM))
+         IF(LDOF1(JEVAB,IELEM).GT.0) ITMAX=MAX(IDIST,LDOF1(JEVAB,IELEM))
+
+ 1100   CONTINUE
+
+      END IF
+
+      NDIST=ITMAX-ITMIN+1
+
+      MDIST=MAX(MDIST,NDIST)
+
+ 1200 CONTINUE
+
+      RETURN
+      END
+
+
+C********************************************************************
+      SUBROUTINE INCLOD(IFFIX,ASLOD,ASDIS,NOLCS,NOLOD,RLOAD,MTOTV,
+     +                  MLOAD,NLOAD,MDOFN,TOTLO,FACTO,LCASE)
+C********************************************************************
+C *** THIS SUBROUTINE IS TO INCREASE LOAD VECTOR
+
+C     NOLOD     NODE NUMBER ASSOCIATED WITH NODAL LOAD
+C     NOLCS     LOAD CASE NUMBER ASSOCIATED WITH NODAL LOAD
+C     RLOAD     NODAL LOAD RELATED TO THE DEGREES OF FREEDOM OF NODE
+C     MLOAD     MAXIMUM NUMBER OF NODAL LOAD
+C     NLOAD     NUMBER OF NODAL LOAD
+C     FACTO     THE MAGNITUDE OF ANY LOAD INCREMENT
+C     IINCS     NUMBER OF INCREMENTS
+C               IN WHICH THE TOTAL LOADING IS TO BE APPLIED
+C     NITER     MAXIMUM PERMISSIBLE NUMBER OF ITERATIONS PER EACH STEP
+C     TOLER     TOLERANCE PERMITTED ON THE CONVERGENCE PROCESS
+C     ASLOD     INCREMENTAL LAOD
+C     ASDIS     INCREMENTAL DISPLACEMENT
+C     IFFIX     CODE FOR DEGREE OF FREEDOM IN THE STRUCTURE
+
+      IMPLICIT DOUBLE PRECISION (A-H,O-Z)
+
+      DIMENSION IFFIX(MTOTV),ASLOD(MTOTV),ASDIS(MTOTV)
+      DIMENSION NOLCS(MLOAD),NOLOD(MLOAD),RLOAD(MDOFN,MLOAD)
+
+      DO 100 ITOTV=1,MTOTV
+
+        ASLOD(ITOTV)=0.0D0
+        ASDIS(ITOTV)=0.0D0
+
+  100 CONTINUE
+
+      DO 200 ILOAD=1,NLOAD
+      DO 200 IDOFN=1,MDOFN
+
+        NGASH=NOLCS(ILOAD)  ! NOLCS(ILOAD)=LOAD CASE
+
+        NGISH=(NOLOD(ILOAD)-1)*MDOFN+IDOFN
+        NGJSH=IFFIX(NGISH)
+
+        IF(NGASH.EQ.LCASE.AND.NGJSH.GT.0) THEN
+
+         ASLOD(NGJSH)=RLOAD(IDOFN,ILOAD)*FACTO
+
+        END IF
+
+  200 CONTINUE
+
+      TOTLO=TOTLO+FACTO
+
+
+      RETURN
+      END
+
+
+C********************************************************************
+      SUBROUTINE STIF11(NANAL,ASDIS,ELOAD,ASTIF,NEQNS,MDIST,EFAIL)
+C********************************************************************
+C *** THIS SUBROUTINE IS TO FORM AND ASSEMBLE ELEMENT STIFFNESS MATRIX
+
+C     ASTIF   STIFFNESS MATRIX IN THE STRUCTURE
+C     ELOAD   CURRENT ELEMENT LOAD
+C     ASDIS   DISPLACEMENT VECTOR IN THE STRUCTURE
+C     MTOTV   MAXIMUM NUMBER OF EQUATION
+C     NEQNS   NUMBER OF EQUATION
+
+      IMPLICIT DOUBLE PRECISION (A-H,O-Z)
+
+      DIMENSION ASTIF(*),ASDIS(*),EFAIL(6,*)
+
+      DIMENSION EBASC( 6, 6),EBMAT(12,12),EKMAT(12,12),ETROT( 6,12)
+      DIMENSION ESTIF(12,12),EKTMT(12,12),ETMAT(12,12)
+
+      DIMENSION LNODS( 2),LDOFS(12),ELCOD(3,3),PROPS(20),LTYPE(7)
+      DIMENSION ELOAD(12,*),ELDIS(12)
+
+      DO 100 I=1,NEQNS*MDIST
+
+        ASTIF(I)=0.0D0
+
+  100 CONTINUE
+
+      REWIND 12
+
+      READ(12) NELEM,NEVAB,NNODE,NDOFN,NDIME
+
+	REWIND 19	     		   ! S.S.MA  03.12.22
+
+      DO 300 IELEM=1,NELEM
+
+        CALL RNULV2(EKTMT,NEVAB,NEVAB)
+        CALL RNULV2(ESTIF,NEVAB,NEVAB)
+        CALL RNULV1(ELDIS,NEVAB)
+        CALL RNULV2(EKMAT,NEVAB,NEVAB)
+        CALL RNULV2(ETMAT,NEVAB,NEVAB)
+
+        READ(12) JELEM,LPROP,LNODS,LDOFS,ELCOD,PROPS,LTYPE
+
+	  READ(19,*) III,AXIFO2,BMYII2,BMZII2,BMYJJ2,BMZJJ2	 ! S.S.MA  03.12.22
+	
+        DO 200 IEVAB=1,NEVAB
+
+          JEVAB=LDOFS(IEVAB)
+
+          IF(JEVAB.GT.0) ELDIS(IEVAB)=ASDIS(JEVAB)
+
+  200   CONTINUE
+
+        IF(NANAL.EQ.1.AND.LTYPE(1).EQ.1)THEN
+
+          CALL SFRAME(EKMAT,ETMAT,LTYPE,NDIME,
+     +                ELCOD,PROPS,ELOAD(1,IELEM),ELDIS,
+     +                EBASC,ETROT,EBMAT)
+
+        ELSE IF(NANAL.EQ.1.AND.LTYPE(1).EQ.2)THEN
+
+          IF(EFAIL(1,IELEM).EQ.1.0.OR.EFAIL(1,IELEM).EQ.2.0) GOTO 300
+
+          CALL STRUSS(EKMAT,ETMAT,NDIME,
+     +                ELCOD,PROPS,ELOAD(1,IELEM),ELDIS,
+     +                EBASC,ETROT,EBMAT,AXIFO2,IELEM)        !S.S.MA 03.12.22
+        ELSE
+
+          IF(EFAIL(1,IELEM).EQ.1.0.OR.EFAIL(1,IELEM).EQ.2.0) GOTO 300
+
+          CALL STRUSS(EKMAT,ETMAT,NDIME,
+     +                ELCOD,PROPS,ELOAD(1,IELEM),ELDIS,
+     +                EBASC,ETROT,EBMAT,AXIFO2,IELEM)        !S.S.MA 03.12.22
+        END IF
+
+        CALL MULT22(EKTMT,EKMAT,ETMAT,NEVAB,NEVAB,NEVAB)
+        CALL MUL2T2(ESTIF,ETMAT,EKTMT,NEVAB,NEVAB,NEVAB)
+
+        CALL ASEMBL(ASTIF,NEQNS,NEVAB,LDOFS,ESTIF)
+
+  300 CONTINUE
+
+      RETURN
+      END
+
+
+C********************************************************************
+      SUBROUTINE SFRAME(EKMAT,ETMAT,LTYPE,NDIME,
+     +                  ELCOD,PROPS,ELFOR,ELDIS,
+     +                  EBASC,ETROT,EBMAT)
+C********************************************************************
+C *** THIS SUBROUTINE IS TO FORM LOCAL ELEMENT STIFFNESS MATRIX
+C     AND COORDINATE TRANSFORMATION MATRIX
+
+C     EKMAT    LOCAL ELEMENT STIFFNESS MATRIX
+C     ETMAT    COORDINATE TRANSFORMATION MATRIX
+C     NDOFN    NUMBER OF DEGREE OF FREEDOM PER NODE
+C     NDIME    ORDER OF DIMENSION
+C     NEVAB    NUMBER OF ELEMENT VARIABLES
+C     NNODE    NUMBER OF NODES PER ELEMENT
+C     LPROP    MATRIAL PROPERTY NUMBER OF ELEMENT
+C     LNODS    NODAL CONNECTION NUMBERS OF ELEMENT
+C     LDOFS    CODE FOR STATE OF DEGREE OF FREEDOM OF ELEMENT
+C     ELCOD    COORDINATE OF ELEMENT
+C     PROPS    MATRIAL PROPERTY OF ELEMENT
+C     ELFOR    INCREMENTAL ELEMENT FORCE VECTOR
+C     ELDIS    INCREMENTAL ELEMENT DISPLACEMENT VECTOR
+
+      IMPLICIT DOUBLE PRECISION (A-H,O-Z)
+
+      DIMENSION EKMAT(12,12),ETMAT(12,12),DICOS(3,3)
+      DIMENSION ELCOD(3,3),PROPS(20),LTYPE(7)
+      DIMENSION ELFOR(12),ETROT(6,12),EBMAT(6,12),EBASC(6,6)
+      DIMENSION ELDIS(12)
+
+      PI=3.141592653589793238462643D0
+
+C********************************************************************
+C *** INITIALIZE DATA
+C********************************************************************
+
+      DO 105 I=1,6
+      DO 105 J=1,6
+
+        EBASC(I,J)=0.0D0
+
+  105 CONTINUE
+
+      DO 106 I=1,6
+      DO 106 J=1,12
+
+        ETROT(I,J)=0.0D0
+
+  106 CONTINUE
+
+      DO 107 I=1,3
+      DO 107 J=1,3
+
+        DICOS(I,J)=0.0D0
+
+  107 CONTINUE
+
+      XL=ELCOD(1,2)-ELCOD(1,1)
+      YL=ELCOD(2,2)-ELCOD(2,1)
+      ZL=ELCOD(3,2)-ELCOD(3,1)
+
+      AL=DSQRT(XL**2.0D0+YL**2.0D0+ZL**2.0D0)
+
+      AXIFO=ELFOR( 7)  
+      BMYII=ELFOR( 5)  
+      BMZII=ELFOR( 6)  
+      BMYJJ=ELFOR(11)  
+      BMZJJ=ELFOR(12)  
+
+      PY =PROPS( 1)*PROPS(9)
+      PMZ=PROPS(10)*PROPS(9)
+      PMY=PROPS(11)*PROPS(9)
+
+C********************************************************************
+C *** MATERIAL PROPERTY	   S.S.MA 03.12.11
+C********************************************************************
+
+      YOUNG=PROPS(5)		 ! S.S.MA 03.12.11 
+
+      ETA_A=1.0D0
+      ETA_B=1.0D0
+
+C********************************************************************
+C *** MATERIAL PROPERTY
+C********************************************************************
+
+      EA=YOUNG*PROPS(1)
+      EIZ=YOUNG*PROPS(2)
+      EIY=YOUNG*PROPS(3)
+
+      GJ=PROPS(4)*PROPS(6)
+
+      GASY=PROPS(7)*PROPS(6)
+      GASZ=PROPS(8)*PROPS(6)
+
+C********************************************************************
+C *** GEOMETRIC NONLINEARITY : STABILITY FUNCTIONS
+C********************************************************************
+
+      S1=4.0D0
+      S2=2.0D0
+      S3=4.0D0
+      S4=2.0D0
+
+      RHO=(AXIFO*AL**2.0D0)/(EIZ*PI**2.0D0)
+
+      IF (DABS(RHO).LE.2.0D0) THEN
+
+        VAL01=((1.0D-02*RHO+5.43D-01)/(4.0D0+RHO)
+     +         +(4.0D-03*RHO+2.85D-01)/(8.183D0+RHO))*RHO**2
+        VAL02=((1.0D-02*RHO+5.43D-01)/(4.0D0+RHO)
+     +         -(4.0D-03*RHO+2.85D-01)/(8.183D0+RHO))*RHO**2
+
+        S1=(4.0D0+2.0D0*PI**2.0D0*RHO/15.0D0-VAL01)
+        S2=(2.0D0-PI**2.0D0*RHO/30.0D0+VAL02)
+
+      ELSE IF (DABS(RHO).GT.2.0D0) THEN
+
+        EKLEN=PI*DSQRT(DABS(RHO))
+
+        IF (RHO.LT.0.0D0) THEN
+
+          VALUE=2.0D0-2.0D0*DCOS(EKLEN)-EKLEN*DSIN(EKLEN)
+
+          S1=(EKLEN*DSIN(EKLEN)-EKLEN**2.0D0*DCOS(EKLEN))/VALUE
+          S2=(EKLEN**2.0D0-EKLEN*DSIN(EKLEN))/VALUE
+
+        ELSE IF (RHO.GT.0.0D0) THEN
+
+          VALUE=2.0D0-2.0D0*DCOSH(EKLEN)+EKLEN*DSINH(EKLEN)
+
+          S1=(EKLEN**2.0D0*DCOSH(EKLEN)-EKLEN*DSINH(EKLEN))/VALUE
+          S2=(EKLEN*DSINH(EKLEN)-EKLEN**2.0D0)/VALUE
+
+        ENDIF
+
+      ENDIF
+
+      RHO=(AXIFO*AL**2.0D0)/(EIY*PI**2.0D0)
+
+      IF (DABS(RHO).LE.2.0D0) THEN
+
+        VAL01=((1.0D-02*RHO+5.43D-01)/(4.0D0+RHO)
+     +         +(4.0D-03*RHO+2.85D-01)/(8.183D0+RHO))*RHO**2
+        VAL02=((1.0D-02*RHO+5.43D-01)/(4.0D0+RHO)
+     +         -(4.0D-03*RHO+2.85D-01)/(8.183D0+RHO))*RHO**2
+
+        S3=(4.0D0+2.0D0*PI**2.0D0*RHO/15.0D0-VAL01)
+        S4=(2.0D0-PI**2.0D0*RHO/30.0D0+VAL02)
+
+      ELSE IF (DABS(RHO).GT.2.0D0) THEN
+
+        EKLEN=PI*DSQRT(DABS(RHO))
+
+        IF (RHO.LT.0.0D0) THEN
+
+          VALUE=2.0D0-2.0D0*DCOS(EKLEN)-EKLEN*DSIN(EKLEN)
+
+          S3=(EKLEN*DSIN(EKLEN)-EKLEN**2.0D0*DCOS(EKLEN))/VALUE
+          S4=(EKLEN**2.0D0-EKLEN*DSIN(EKLEN))/VALUE
+
+        ELSE IF (RHO.GT.0.0D0) THEN
+
+          VALUE=2.0D0-2.0D0*DCOSH(EKLEN)+EKLEN*DSINH(EKLEN)
+
+          S3=(EKLEN**2.0D0*DCOSH(EKLEN)-EKLEN*DSINH(EKLEN))/VALUE
+          S4=(EKLEN*DSINH(EKLEN)-EKLEN**2.0D0)/VALUE
+
+        ENDIF
+
+      ENDIF
+
+C********************************************************************
+C *** FIND COEFFICIENT IN LOCAL AXIS 3-3
+C********************************************************************
+
+      CIIZZ=ETA_A*(S1-(S2**2.0D0/S1)*(1.0D0-ETA_B))*(EIZ/AL)
+      CIJZZ=ETA_A*ETA_B*S2*(EIZ/AL)
+      CJJZZ=ETA_B*(S1-(S2**2.0D0/S1)*(1.0D0-ETA_A))*(EIZ/AL)
+
+      IF(CIIZZ.NE.0.0D0.AND.CIJZZ.NE.0.0D0.AND.CJJZZ.NE.0.0D0.AND.
+     +   GASY.GT.0.0D0) CALL COSHEF(CIIZZ,CIJZZ,CJJZZ,GASY,AL)
+
+C********************************************************************
+C     FIND COEFFICIENT IN LOCAL AXIS 2-2
+C********************************************************************
+
+      CIIYY=ETA_A*(S3-(S4**2.0D0/S3)*(1.0D0-ETA_B))*(EIY/AL)
+      CIJYY=ETA_A*ETA_B*S4*(EIY/AL)
+      CJJYY=ETA_B*(S3-(S4**2.0D0/S3)*(1.0D0-ETA_A))*(EIY/AL)
+
+      IF(CIIYY.NE.0.0D0.AND.CIJYY.NE.0.0D0.AND.CJJYY.NE.0.0D0.AND.
+     +   GASZ.GT.0.0D0) CALL COSHEF(CIIYY,CIJYY,CJJYY,GASZ,AL)
+
+C********************************************************************
+C *** FORM BASIC ELEMENT STIFFNESS (6 BY 6) MATRIX
+C********************************************************************
+
+      EBASC( 1, 1)= EA/AL
+      EBASC( 2, 2)= CIIYY
+      EBASC( 2, 3)= CIJYY
+      EBASC( 3, 2)= CIJYY
+      EBASC( 3, 3)= CJJYY
+      EBASC( 4, 4)= CIIZZ
+      EBASC( 4, 5)= CIJZZ
+      EBASC( 5, 4)= CIJZZ
+      EBASC( 5, 5)= CJJZZ
+      EBASC( 6, 6)= GJ/AL
+
+C********************************************************************
+C *** FORM TRANSFORMATION MATRIX
+C********************************************************************
+
+      ETROT( 1, 1)=-1.0D0
+      ETROT( 1, 7)= 1.0D0
+      ETROT( 2, 3)=-1.0D0/AL
+      ETROT( 2, 5)= 1.0D0
+      ETROT( 2, 9)= 1.0D0/AL
+      ETROT( 3, 3)=-1.0D0/AL
+      ETROT( 3, 9)= 1.0D0/AL
+      ETROT( 3,11)= 1.0D0
+      ETROT( 4, 2)= 1.0D0/AL
+      ETROT( 4, 6)= 1.0D0
+      ETROT( 4, 8)=-1.0D0/AL
+      ETROT( 5, 2)= 1.0D0/AL
+      ETROT( 5, 8)=-1.0D0/AL
+      ETROT( 5,12)= 1.0D0
+      ETROT( 6, 4)= 1.0D0
+      ETROT( 6,10)=-1.0D0
+
+C********************************************************************
+C *** FORM ELEMENT STIFFNESS (12 BY 12) MATRIX
+C********************************************************************
+
+      DO 115 I=1,6
+      DO 115 J=1,12
+
+        EBMAT(I,J)=0.0D0
+
+        DO 115 K=1,6
+
+          EBMAT(I,J)=EBMAT(I,J)+EBASC(I,K)*ETROT(K,J)
+
+  115 CONTINUE
+
+      DO 116 I=1,12
+      DO 116 J=1,12
+
+        EKMAT(I,J)=0.0D0
+
+        DO 116 K=1,6
+
+          EKMAT(I,J)=EKMAT(I,J)+ETROT(K,I)*EBMAT(K,J)
+
+  116 CONTINUE
+
+C********************************************************************
+C *** CONSIDERING P-DELTA
+C********************************************************************
+
+      EKMAT( 2, 2)=EKMAT( 2, 2)+AXIFO/AL 
+      EKMAT( 2, 8)=EKMAT( 2, 8)-AXIFO/AL 
+      EKMAT( 8, 2)=EKMAT( 8, 2)-AXIFO/AL 
+      EKMAT( 8, 8)=EKMAT( 8, 8)+AXIFO/AL 
+
+      EKMAT( 3, 3)=EKMAT( 3, 3)+AXIFO/AL 
+      EKMAT( 3, 9)=EKMAT( 3, 9)-AXIFO/AL 
+      EKMAT( 9, 3)=EKMAT( 9, 3)-AXIFO/AL 
+      EKMAT( 9, 9)=EKMAT( 9, 9)+AXIFO/AL 
+
+      EKMAT( 1, 2)=EKMAT( 1, 2)+(BMZII+BMZJJ)/AL**2.0D0
+
+      EKMAT( 1, 3)=EKMAT( 1, 3)-(BMYII+BMYJJ)/AL**2.0D0
+
+      EKMAT( 1, 8)=EKMAT( 1, 8)-(BMZII+BMZJJ)/AL**2.0D0
+
+      EKMAT( 1, 9)=EKMAT( 1, 9)+(BMYII+BMYJJ)/AL**2.0D0
+
+      EKMAT( 2, 7)=EKMAT( 2, 7)-(BMZII+BMZJJ)/AL**2.0D0
+
+      EKMAT( 3, 7)=EKMAT( 3, 7)+(BMYII+BMYJJ)/AL**2.0D0
+
+      EKMAT( 7, 8)=EKMAT( 7, 8)+(BMZII+BMZJJ)/AL**2.0D0
+
+      EKMAT( 7, 9)=EKMAT( 7, 9)-(BMYII+BMYJJ)/AL**2.0D0
+
+      EKMAT( 2, 1)=EKMAT( 2, 1)+(BMZII+BMZJJ)/AL**2.0D0
+
+      EKMAT( 3, 1)=EKMAT( 3, 1)-(BMYII+BMYJJ)/AL**2.0D0
+
+      EKMAT( 8, 1)=EKMAT( 8, 1)-(BMZII+BMZJJ)/AL**2.0D0
+
+      EKMAT( 9, 1)=EKMAT( 9, 1)+(BMYII+BMYJJ)/AL**2.0D0
+
+      EKMAT( 7, 2)=EKMAT( 7, 2)-(BMZII+BMZJJ)/AL**2.0D0
+
+      EKMAT( 7, 3)=EKMAT( 7, 3)+(BMYII+BMYJJ)/AL**2.0D0
+	
+      EKMAT( 8, 7)=EKMAT( 8, 7)+(BMZII+BMZJJ)/AL**2.0D0
+
+      EKMAT( 9, 7)=EKMAT( 9, 7)-(BMYII+BMYJJ)/AL**2.0D0
+	
+C********************************************************************
+C *** FORM DIRECTION COSINE AND COORDINATE TRANSFORMATION MATRIX
+C********************************************************************
+
+      TMP01 = 0.0D0
+
+      DO 300 IDIME = 1,NDIME
+
+         TMP02=ELCOD(IDIME,2)-ELCOD(IDIME,1)
+
+         TMP02=TMP02+ELDIS(IDIME+6)-ELDIS(IDIME)  ! UPDATE
+
+         DICOS(1,IDIME) = TMP02
+
+         TMP01=TMP01+TMP02**2
+
+  300 CONTINUE
+
+      TMP01 = DSQRT(TMP01) ! ELASTIC PORTION LENGTH
+
+      DO 400 IDIME = 1,NDIME
+
+        DICOS(1,IDIME) = DICOS(1,IDIME)/TMP01
+
+  400 CONTINUE
+
+      IF(ELCOD(2,3).EQ.9.AND.ELCOD(3,3).EQ.17) THEN
+
+        DICOS(3,1)=0.0D0
+        DICOS(3,2)=0.0D0
+        DICOS(3,3)=0.0D0
+
+        IF(ELCOD(1,3).EQ.-1) DICOS(3,3)=1.0
+        IF(ELCOD(1,3).EQ.-2) DICOS(3,2)=1.0
+        IF(ELCOD(1,3).EQ.-3) DICOS(3,1)=1.0
+        IF(ELCOD(1,3).EQ.-4) DICOS(3,3)=-1.0
+        IF(ELCOD(1,3).EQ.-5) DICOS(3,2)=-1.0
+        IF(ELCOD(1,3).EQ.-6) DICOS(3,1)=-1.0
+
+      ELSE
+
+        TMP01 = 0.0D0
+
+        DO 500 IDIME = 1,NDIME
+
+           TMP02 = ELCOD(IDIME,3) - ELCOD(IDIME,1)
+
+           DICOS(2,IDIME) = TMP02
+
+           TMP01=TMP01+TMP02**2
+
+  500   CONTINUE
+
+        TMP01=DSQRT(TMP01)
+
+        DICOS(3,1)=DICOS(1,2)*DICOS(2,3)-DICOS(1,3)*DICOS(2,2)
+        DICOS(3,2)=DICOS(1,3)*DICOS(2,1)-DICOS(1,1)*DICOS(2,3)
+        DICOS(3,3)=DICOS(1,1)*DICOS(2,2)-DICOS(1,2)*DICOS(2,1)
+
+        TMP01=DSQRT(DICOS(3,1)**2+DICOS(3,2)**2+DICOS(3,3)**2)
+
+        DO 600 IDIME=1,NDIME
+
+          DICOS(3,IDIME) = DICOS(3,IDIME)/TMP01
+
+  600   CONTINUE
+
+      END IF
+
+      DICOS(2,1)=DICOS(3,2)*DICOS(1,3)-DICOS(3,3)*DICOS(1,2)
+      DICOS(2,2)=DICOS(3,3)*DICOS(1,1)-DICOS(3,1)*DICOS(1,3)
+      DICOS(2,3)=DICOS(3,1)*DICOS(1,2)-DICOS(3,2)*DICOS(1,1)
+
+      DO 700 IPOSI=1,4    ! NPOSI=4 :  NPOSI=NEVAB/NDIME
+
+       JPOSI = (IPOSI-1)*NDIME
+
+       DO 700 IDIME = 1,NDIME
+       DO 700 JDIME = 1,NDIME
+
+         ETMAT(JPOSI+IDIME,JPOSI+JDIME) = DICOS(IDIME,JDIME)
+
+  700 CONTINUE
+
+      RETURN
+      END
+
+C*********************************************************************
+      SUBROUTINE COSHEF(CII,CIJ,CJJ,GAS,AL)
+C*********************************************************************
+C *** THIS SUBROUTINE IS TO CONSIDER OF SHEAR DEFORMATION
+
+      IMPLICIT DOUBLE PRECISION (A-H,O-Z)
+
+      DETAA=CII*CJJ-CIJ**2.0D0
+
+      IF(DETAA.EQ.0.0D0) THEN
+
+       WRITE(*,*)'SINGULAR STIFFNESS MATRIX CHECK STIFFNESS FACTORS'
+       STOP
+
+      END IF
+
+      EII= CJJ/DETAA+1.0D0/(GAS*AL)
+      EIJ=-CIJ/DETAA+1.0D0/(GAS*AL)
+      EJJ= CII/DETAA+1.0D0/(GAS*AL)
+
+      DETBB=EII*EJJ-EIJ**2.0D0
+
+      IF(DETBB.EQ.0.0D0) THEN
+
+       WRITE(6,*)'SINGULAR STIFFNESS MATRIX CHECK STIFFNESS FACTORS'
+       STOP
+
+      END IF
+
+      CII= EJJ/DETBB
+      CIJ=-EIJ/DETBB
+      CJJ= EII/DETBB
+
+      RETURN
+      END
+
+
+C********************************************************************
+      SUBROUTINE STRUSS(EKMAT,ETMAT,NDIME,
+     +                  ELCOD,PROPS,ELFOR,ELDIS,
+     +                  EBASC,ETROT,EBMAT,AXIFO2,NELEM)   !S.S.MA 12.22
+C********************************************************************
+C *** THIS SUBROUTINE IS TO FORM LOCAL ELEMENT STIFFNESS MATRIX
+C     AND COORDINATE TRANSFORMATION MATRIX
+
+C     EKMAT    LOCAL ELEMENT STIFFNESS MATRIX
+C     ETMAT    COORDINATE TRANSFORMATION MATRIX
+C     NDOFN    NUMBER OF DEGREE OF FREEDOM PER NODE
+C     NDIME    ORDER OF DIMENSION
+C     NEVAB    NUMBER OF ELEMENT VARIABLES
+C     NNODE    NUMBER OF NODES PER ELEMENT
+C     LPROP    MATRIAL PROPERTY NUMBER OF ELEMENT
+C     LNODS    NODAL CONNECTION NUMBERS OF ELEMENT
+C     LDOFS    CODE FOR STATE OF DEGREE OF FREEDOM OF ELEMENT
+C     ELCOD    COORDINATE OF ELEMENT
+C     PROPS    MATRIAL PROPERTY OF ELEMENT
+C     ELFOR    INCREMENTAL ELEMENT FORCE VECTOR
+C     ELDIS    INCREMENTAL ELEMENT DISPLACEMENT VECTOR
+
+      IMPLICIT DOUBLE PRECISION (A-H,O-Z)
+
+      DIMENSION EKMAT(12,12),ETMAT(12,12),DICOS(3,3)
+      DIMENSION ELCOD(3,3),PROPS(20)
+      DIMENSION ELFOR(12),ETROT(6,12),EBMAT(6,12),EBASC(6,6)
+      DIMENSION ELDIS(12)
+
+      PI=3.141592653589793238462643D0
+
+C********************************************************************
+C *** INITIALIZE DATA
+C********************************************************************
+
+      DO 105 I=1,6
+      DO 105 J=1,6
+
+        EBASC(I,J)=0.0D0
+
+  105 CONTINUE
+
+      DO 106 I=1,6
+      DO 106 J=1,12
+
+        ETROT(I,J)=0.0D0
+
+  106 CONTINUE
+
+      DO 107 I=1,3
+      DO 107 J=1,3
+
+        DICOS(I,J)=0.0D0
+
+  107 CONTINUE
+
+      XL=ELCOD(1,2)-ELCOD(1,1)
+      YL=ELCOD(2,2)-ELCOD(2,1)
+      ZL=ELCOD(3,2)-ELCOD(3,1)
+
+      AL=DSQRT(XL**2.0D0+YL**2.0D0+ZL**2.0D0)
+
+      AXIFO=ELFOR( 7)  
+
+      PY =PROPS( 1)*PROPS(9)
+
+C********************************************************************
+C *** MATERIAL PROPERTY			 S.S.MA 03.12.11
+C ***	SECANT ELASTIC MODULUS FOR CABLE   S.S.MA 03.12.23
+C********************************************************************
+	
+      EYOUNG=PROPS(5)			! S.S.MA 03.12.11
+
+	WEI=PROPS(18)			  ! S.S.MA 03.12.23
+
+      SEC1=((WEI*props(1)*XL)**2.0D0)*(AXIFO2+ELFOR( 7))*EYOUNG*PROPS(1)
+	SEC2=24.0D0*(AXIFO2**2.0D0)*(ELFOR( 7)**2.0D0)
+
+	IF(SEC2.EQ.0.0D0) THEN
+	 YOUNG=EYOUNG
+	ELSE IF(SEC2.GT.0.0D0) THEN 
+	 YOUNG=EYOUNG/(1.0D0+SEC1/SEC2)
+	ENDIF
+
+	IF(AXIFO.LT.0.0D0) YOUNG=0.0D0	! S.S.MA 03.12.20
+
+C********************************************************************
+C *** WRITE SECANT ELASTIC MODULUS & DATAS   S.S.MA 03.12.24
+C********************************************************************
+
+	WRITE(20,222) NELEM,PROPS(5),PROPS(1),WEI,XL,AXIFO2,ELFOR(7),
+	+              SEC1,SEC2,YOUNG
+  222	FORMAT('NO',4X,'E',12X,'A',12X,'W',12X,'L',10X,'T0',10X,'T1',10X,
+     +       'SEC1',7X,'SEC2',/,I3,8E12.5,/,'Es = ',E12.5,/)
+
+C********************************************************************
+C *** MATERIAL PROPERTY
+C********************************************************************
+
+      EA=YOUNG*PROPS(1)
+
+C********************************************************************
+C *** FORM BASIC ELEMENT STIFFNESS MATRIX
+C********************************************************************
+
+      EBASC( 1, 1)= EA/AL
+
+C********************************************************************
+C *** FORM TRANSFORMATION MATRIX
+C********************************************************************
+
+      ETROT( 1, 1)=-1.0D0
+      ETROT( 1, 7)= 1.0D0
+      ETROT( 2, 3)=-1.0D0/AL
+      ETROT( 2, 5)= 1.0D0
+      ETROT( 2, 9)= 1.0D0/AL
+      ETROT( 3, 3)=-1.0D0/AL
+      ETROT( 3, 9)= 1.0D0/AL
+      ETROT( 3,11)= 1.0D0
+      ETROT( 4, 2)= 1.0D0/AL
+      ETROT( 4, 6)= 1.0D0
+      ETROT( 4, 8)=-1.0D0/AL
+      ETROT( 5, 2)= 1.0D0/AL
+      ETROT( 5, 8)=-1.0D0/AL
+      ETROT( 5,12)= 1.0D0
+      ETROT( 6, 4)= 1.0D0
+      ETROT( 6,10)=-1.0D0
+
+C********************************************************************
+C *** FORM LOCAL ELEMENT STIFFNESS (12 BY 12) MATRIX
+C *** IN ASSEMBLING, TO 6 BY 6
+C********************************************************************
+
+      DO 115 I=1,6
+      DO 115 J=1,12
+
+        EBMAT(I,J)=0.0D0
+
+        DO 115 K=1,6
+
+          EBMAT(I,J)=EBMAT(I,J)+EBASC(I,K)*ETROT(K,J)
+
+  115 CONTINUE
+
+      DO 116 I=1,12
+      DO 116 J=1,12
+
+        EKMAT(I,J)=0.0D0
+
+        DO 116 K=1,6
+
+          EKMAT(I,J)=EKMAT(I,J)+ETROT(K,I)*EBMAT(K,J)
+
+  116 CONTINUE
+
+C********************************************************************
+C *** CONSIDERING P-DELTA
+C********************************************************************
+
+      EKMAT( 2, 2)=EKMAT( 2, 2)+AXIFO/AL 
+      EKMAT( 2, 8)=EKMAT( 2, 8)-AXIFO/AL 
+      EKMAT( 8, 2)=EKMAT( 8, 2)-AXIFO/AL 
+      EKMAT( 8, 8)=EKMAT( 8, 8)+AXIFO/AL 
+
+      EKMAT( 3, 3)=EKMAT( 3, 3)+AXIFO/AL 
+      EKMAT( 3, 9)=EKMAT( 3, 9)-AXIFO/AL 
+      EKMAT( 9, 3)=EKMAT( 9, 3)-AXIFO/AL 
+      EKMAT( 9, 9)=EKMAT( 9, 9)+AXIFO/AL 
+
+C********************************************************************
+C *** FORM DIRECTION COSINE AND COORDINATE TRANSFORMATION MATRIX
+C********************************************************************
+
+      TMP01 = 0.0D0
+
+      DO 300 IDIME = 1,NDIME
+
+         TMP02=ELCOD(IDIME,2)-ELCOD(IDIME,1)
+
+         TMP02=TMP02+ELDIS(IDIME+6)-ELDIS(IDIME)  ! UPDATE
+
+         DICOS(1,IDIME) = TMP02
+
+         TMP01=TMP01+TMP02**2
+
+  300 CONTINUE
+
+      TMP01 = DSQRT(TMP01) ! ELASTIC PORTION LENGTH
+
+      DO 400 IDIME = 1,NDIME
+
+        DICOS(1,IDIME) = DICOS(1,IDIME)/TMP01
+
+  400 CONTINUE
+
+      IF(ELCOD(2,3).EQ.9.AND.ELCOD(3,3).EQ.17) THEN
+
+        DICOS(3,1)=0.0D0
+        DICOS(3,2)=0.0D0
+        DICOS(3,3)=0.0D0
+
+        IF(ELCOD(1,3).EQ.-1) DICOS(3,3)=1.0
+        IF(ELCOD(1,3).EQ.-2) DICOS(3,2)=1.0
+        IF(ELCOD(1,3).EQ.-3) DICOS(3,1)=1.0
+        IF(ELCOD(1,3).EQ.-4) DICOS(3,3)=-1.0
+        IF(ELCOD(1,3).EQ.-5) DICOS(3,2)=-1.0
+        IF(ELCOD(1,3).EQ.-6) DICOS(3,1)=-1.0
+
+      ELSE
+
+        TMP01 = 0.0D0
+
+        DO 500 IDIME = 1,NDIME
+
+           TMP02 = ELCOD(IDIME,3) - ELCOD(IDIME,1)
+
+           DICOS(2,IDIME) = TMP02
+
+           TMP01=TMP01+TMP02**2
+
+  500   CONTINUE
+
+        TMP01=DSQRT(TMP01)
+
+        DICOS(3,1)=DICOS(1,2)*DICOS(2,3)-DICOS(1,3)*DICOS(2,2)
+        DICOS(3,2)=DICOS(1,3)*DICOS(2,1)-DICOS(1,1)*DICOS(2,3)
+        DICOS(3,3)=DICOS(1,1)*DICOS(2,2)-DICOS(1,2)*DICOS(2,1)
+
+        TMP01=DSQRT(DICOS(3,1)**2+DICOS(3,2)**2+DICOS(3,3)**2)
+
+        DO 600 IDIME=1,NDIME
+
+          DICOS(3,IDIME) = DICOS(3,IDIME)/TMP01
+
+  600   CONTINUE
+
+      END IF
+
+      DICOS(2,1)=DICOS(3,2)*DICOS(1,3)-DICOS(3,3)*DICOS(1,2)
+      DICOS(2,2)=DICOS(3,3)*DICOS(1,1)-DICOS(3,1)*DICOS(1,3)
+      DICOS(2,3)=DICOS(3,1)*DICOS(1,2)-DICOS(3,2)*DICOS(1,1)
+
+      DO 700 IPOSI=1,4    ! NPOSI=4 :  NPOSI=NEVAB/NDIME
+
+       JPOSI = (IPOSI-1)*NDIME
+
+       DO 700 IDIME = 1,NDIME
+       DO 700 JDIME = 1,NDIME
+
+         ETMAT(JPOSI+IDIME,JPOSI+JDIME) = DICOS(IDIME,JDIME)
+
+  700 CONTINUE
+
+      RETURN
+      END
+
+C*********************************************************************
+      SUBROUTINE VECCOP(A,B,NEQNS)
+C*********************************************************************
+C *** THIS SUBROUTINE IS TO COPY VECTOR A INTO VECTOR B
+
+      IMPLICIT DOUBLE PRECISION (A-H,O-Z)
+
+      DIMENSION A(*),B(*)
+ 
+      DO 100 IEQNS = 1,NEQNS
+
+        B(IEQNS)=A(IEQNS)
+
+  100 CONTINUE
+
+      RETURN
+      END
+
+C*********************************************************************
+      SUBROUTINE KVDET(ASTIF,NEQNS,MDIST,DET,KSC,MSTIF)
+C*********************************************************************
+C *** THIS SUBROUTINE IS TO FORM THE DETERMINANT OF THE GLOBAL STIFFNESS
+C     MATRIX STORED AS A VECTOR (UPPER TRIANGLE)
+
+C     ASTIF   STIFFNESS MATRIX IN THE STRUCTURE
+C     NEQNS   NUMBER OF EQUATION
+C     DET     DETERMINANT OF STIFFNESS MATRIX
+
+      IMPLICIT DOUBLE PRECISION (A-H,O-Z)
+
+      DIMENSION ASTIF(*),BSTIF(MSTIF)
+
+      DO 101 I=1,NEQNS*MDIST
+
+        BSTIF(I)=ASTIF(I)
+
+ 101  CONTINUE
+ 
+      IWP2 = MDIST + 2
+      L = NEQNS - 1
+
+      DO 300 J = 1,L
+
+        IF (MDIST-NEQNS+J.LE.0) MA = IWP2
+
+        MA = MA-1
+
+      IF(BSTIF(J).EQ.0.0D0) WRITE(*,*) ' BANRED DIVIDED BY ZERO'
+
+        CONST=1.0D0/BSTIF(J)
+
+        II = J
+
+        DO 200 K = 2,MA
+
+          II = II + 1
+          IF (BSTIF((K-1)*NEQNS+J).EQ.0.0D0) GO TO 200
+          EM = BSTIF((K-1)*NEQNS+J)*CONST
+          LL = 0
+
+          DO 100 I = K,MA
+
+            LL = LL + 1
+            BSTIF((LL-1)*NEQNS+II)=BSTIF((LL-1)*NEQNS+II)
+     +                            -EM*BSTIF((I-1)*NEQNS+J)
+
+  100     CONTINUE
+
+  200   CONTINUE
+
+  300 CONTINUE
+
+      DET = 1.0D0
+      KSC = 0
+
+      DO 400 J = 1,NEQNS
+
+        DET = DET*BSTIF(J)
+
+        IF(DET.GE.1.0D10) DET=DET/1.0D10
+
+        IF (BSTIF(J).LT.0.0D0) KSC = KSC + 1
+
+  400 CONTINUE
+
+      RETURN
+      END
+  
+C*********************************************************************
+      SUBROUTINE BANRED(ASTIF,NEQNS,MDIST)
+C*********************************************************************
+C *** THIS SUBROUTINE IS TO PERFORM GAUSSIAN REDUCTION OF THE STIFFNESS
+C     MATRIX STORED AS A VECTOR ASTIF(NEQNS*(MDIST+1))
+
+C     ASTIF   STIFFNESS MATRIX IN THE STRUCTURE
+C     NEQNS   NUMBER OF EQUATION
+
+      IMPLICIT DOUBLE PRECISION (A-H,O-Z)
+
+      DIMENSION ASTIF(*)
+ 
+      DO 200 IEQNS = 2,NEQNS
+
+        IL1 = IEQNS - 1
+        KBL = IL1 + MDIST + 1
+
+        IF (KBL-NEQNS.GT.0) KBL = NEQNS
+
+        DO 200 J = IEQNS,KBL
+
+          IJ = (J-IEQNS)*NEQNS + IEQNS
+          SUM = ASTIF(IJ)
+          NKB = J - MDIST
+
+          IF (NKB.LE.0) NKB = 1
+
+          IF (NKB-IL1.LE.0) THEN
+
+            DO 100 M = NKB,IL1
+
+              NI = (IEQNS-M)*NEQNS + M
+              NJ = (J-M)*NEQNS + M
+      IF(ASTIF(M).EQ.0.0D0) WRITE(*,*) ' BANRED DIVIDED BY ZERO'
+              SUM = SUM - ASTIF(NI)*ASTIF(NJ)/ASTIF(M)
+
+  100       CONTINUE
+
+          END IF
+
+          ASTIF(IJ) = SUM
+
+  200 CONTINUE
+
+      RETURN
+      END
+
+C*********************************************************************
+      SUBROUTINE BACSUB(ASTIF,ASLOD,NEQNS,MDIST)
+C*********************************************************************
+C *** THIS SUBROUTINE IS TO PERFORM THE GAUSSIAN BACK-SUBSTITUTION
+
+C     ASTIF   STIFFNESS MATRIX IN THE STRUCTURE
+C     ASLOD   INCREMENTAL LOAD
+C     NEQNS   NUMBER OF EQUATION
+
+      IMPLICIT DOUBLE PRECISION (A-H,O-Z)
+
+      DIMENSION ASTIF(*),ASLOD(*)
+ 
+      IF(ASTIF(IEQNS).EQ.0.0D0) WRITE(*,*) ' BACSUB DIVIDED BY ZERO'
+
+      ASLOD(1) = ASLOD(1)/ASTIF(1)
+
+      DO 200 IEQNS = 2,NEQNS
+
+        SUM=ASLOD(IEQNS)
+
+        NKB=IEQNS-MDIST
+
+        IF (NKB.LE.0) NKB=1
+
+        DO 100 K = NKB,IEQNS-1
+
+          JN = (IEQNS-K)*NEQNS + K
+          SUM = SUM - ASTIF(JN)*ASLOD(K)
+
+  100   CONTINUE
+
+        IF(ASTIF(IEQNS).EQ.0.0D0) WRITE(*,*) ' BACSUB DIVIDED BY ZERO '
+
+        ASLOD(IEQNS) = SUM/ASTIF(IEQNS)
+
+  200 CONTINUE
+
+      DO 400 JJ = 2,NEQNS
+
+        I = NEQNS - JJ + 1
+
+        SUM = 0.0D0
+
+        NKB=I+MDIST
+
+        IF (NKB-NEQNS.GT.0) NKB = NEQNS
+
+        DO 300 K = I+1,NKB
+
+          JN = (K-I)*NEQNS + I
+          SUM = SUM + ASTIF(JN)*ASLOD(K)
+
+  300   CONTINUE
+
+        IF(ASTIF(I).EQ.0.0D0) WRITE(*,*) ' BACSUB DIVIDED BY ZERO'
+
+        ASLOD(I) = ASLOD(I) - SUM/ASTIF(I)
+
+  400 CONTINUE
+
+      RETURN
+      END
+
+
+C********************************************************************
+      SUBROUTINE RESI11(NANAL,TDISP,ASDIS,TLOAD,ELOAD,TOTLO,EFAIL,
+	+                  IINCS)                 !S.S.MA 04.03.26
+C********************************************************************
+C *** THIS SUBROUTINE IS TO FIND ELEMENT FORCE
+
+C     ASTIF   STIFFNESS MATRIX IN THE STRUCTURE
+C     ELOAD   CURRENT ELEMENT LOAD (=TOTAL)
+C     ASDIS   DISPLACEMENT VECTOR IN THE STRUCTURE
+C     MTOTV   MAXIMUM NUMBER OF EQUATION
+C     NEQNS   NUMBER OF EQUATION
+
+      IMPLICIT DOUBLE PRECISION (A-H,O-Z)
+
+      DIMENSION ASDIS(*),TLOAD(12,*),ELOAD(12,*),TDISP(*),EFAIL(6,*)
+
+      DIMENSION EBASC( 6, 6),EBMAT(12,12),EKMAT(12,12),ETROT( 6,12)
+      DIMENSION ESTIF(12,12),EKTMT(12,12),ETMAT(12,12)
+
+      DIMENSION LNODS( 2),LDOFS(12),ELCOD(3,3),PROPS(20),LTYPE(7)
+      DIMENSION ELFOR(12),ELDIS(12),GLFOR(12),TLDIS(12)
+      DIMENSION ET1(6,12),ET2(6)
+
+      REWIND 12
+
+      READ(12) NELEM,NEVAB,NNODE,NDOFN,NDIME
+
+	REWIND 19	     		   ! S.S.MA  03.12.22
+
+	WRITE(10,111) IINCS		   ! S.S.MA  04.03.26
+  111	FORMAT(/,'***** ITERATION : ',I5,3X,'*****',/)
+
+      DO 300 IELEM=1,NELEM
+
+        CALL RNULV1(ELDIS,NEVAB)
+        CALL RNULV1(TLDIS,NEVAB)
+        CALL RNULV1(ELFOR,NEVAB)
+        CALL RNULV1(GLFOR,NEVAB)
+        CALL RNULV2(EKMAT,NEVAB,NEVAB)
+        CALL RNULV2(ETMAT,NEVAB,NEVAB)
+        CALL RNULV2(EKTMT,NEVAB,NEVAB)
+        CALL RNULV2(ESTIF,NEVAB,NEVAB)
+
+        CALL RNULV2(ET1,6,NEVAB)
+        CALL RNULV1(ET2,6)
+
+        READ(12) JELEM,LPROP,LNODS,LDOFS,ELCOD,PROPS,LTYPE
+
+	  READ(19,*) III,AXIFO2,BMYII2,BMZII2,BMYJJ2,BMZJJ2	 ! S.S.MA  03.12.22
+
+        DO 100 IEVAB=1,NEVAB
+
+          JEVAB=LDOFS(IEVAB)
+
+          IF(JEVAB.GT.0) ELDIS(IEVAB)=ASDIS(JEVAB)
+          IF(JEVAB.GT.0) TLDIS(IEVAB)=TDISP(JEVAB)
+
+  100   CONTINUE
+
+        IF(NANAL.EQ.1.AND.LTYPE(1).EQ.1)THEN
+
+          CALL RFRAME(EKMAT,ETMAT,LTYPE,NDIME,
+     +                ELCOD,PROPS,ELOAD(1,IELEM),TLDIS,
+     +                EBASC,ETROT,EBMAT)
+
+	  ELSE IF(NANAL.EQ.1.AND.LTYPE(1).EQ.2)THEN
+
+          CALL RTRUSS(EKMAT,ETMAT,NDIME,
+     +                ELCOD,PROPS,ELOAD(1,IELEM),TLDIS,
+     +                EBASC,ETROT,EBMAT,AXIFO2)	      ! S.S.MA  03.12.22
+        ELSE
+
+          CALL RTRUSS(EKMAT,ETMAT,NDIME,
+     +                ELCOD,PROPS,ELOAD(1,IELEM),TLDIS,
+     +                EBASC,ETROT,EBMAT,AXIFO2)	      ! S.S.MA  03.12.22
+        END IF
+
+        CALL MULT22(EKTMT,EKMAT,ETMAT,NEVAB,NEVAB,NEVAB)
+        CALL MULT21(ELFOR,EKTMT,ELDIS,NEVAB,NEVAB)
+
+        DO 200 IEVAB=1,NEVAB
+
+          ELOAD(IEVAB,IELEM)=TLOAD(IEVAB,IELEM)+ELFOR(IEVAB)
+
+  200   CONTINUE
+
+       IF(NANAL.EQ.2.OR.LTYPE(1).EQ.2)THEN      !  TRUSS ELEMENT
+
+        AXIFO=ELOAD( 7,IELEM)
+	  PY=PROPS( 1)*PROPS(9)
+
+C********************************************************************
+C *** ELIMINATE COMPRESSIVE FORCE  S.S.MA 03.12.20
+C********************************************************************
+	    if(axifo.lt.0.0d0)then			! S.S.MA 03.12.20
+   	       eload(1,ielem)=-1.0d-20
+	       eload(7,ielem)=-1.0d-20
+	     endif
+C********************************************************************
+
+        IF(DABS(AXIFO).GT.PY) THEN
+
+          IF(AXIFO.GT.0) THEN
+
+            ELOAD(1,IELEM)=-PROPS(1)*PROPS(9)
+            ELOAD(7,IELEM)= PROPS(1)*PROPS(9)
+
+          ELSE
+
+            ELOAD(1,IELEM)= PROPS(1)*PROPS(9)
+            ELOAD(7,IELEM)=-PROPS(1)*PROPS(9)
+
+          END IF
+
+          EFAIL(1,IELEM)=2
+
+          WRITE(10,129) IELEM,ELOAD(7,IELEM)
+  129     FORMAT(/,' YIELDING IN ELEMENT NO. =',I4,F15.5)
+
+        END IF
+
+        IF(ELOAD(7,IELEM).LT.PROPS(12)) THEN
+
+          ELOAD(1,IELEM)=-PROPS(12)
+          ELOAD(7,IELEM)= PROPS(12)
+
+          EFAIL(1,IELEM)=1
+
+          WRITE(10,120) IELEM,ELOAD(7,IELEM),PROPS(12)
+  120     FORMAT(/,' BUCKLING IN ELEMENT NO. =',I4,2F15.5)
+
+        END IF
+
+       ELSE                               ! FRAME ELEMENT
+
+        AXIFO=ELOAD( 7,IELEM)
+        BMYII=ELOAD( 5,IELEM)
+        BMZII=ELOAD( 6,IELEM)
+        BMYJJ=ELOAD(11,IELEM)
+        BMZJJ=ELOAD(12,IELEM)
+
+        PY =PROPS( 1)*PROPS(9)
+        PMZ=PROPS(10)*PROPS(9)
+        PMY=PROPS(11)*PROPS(9)
+
+        MODEL=LTYPE(2)
+        PPY=DABS(AXIFO)/DABS(PY)
+
+        IF(MODEL.EQ.1)THEN
+
+         EQN=2.0D0*DABS(BMYII)/(9.0D0*PMY)+2.0D0*DABS(BMZII)/(9.0D0*PMZ)
+
+         IF(PPY.LT.EQN) THEN
+           E6=PPY/2.0D0+DABS(BMYII)/PMY+DABS(BMZII)/PMZ
+         ELSE IF (PPY.GE.EQN) THEN
+           E6=PPY+8.0D0/9.0D0*(DABS(BMYII)/PMY+DABS(BMZII)/PMZ)
+         ENDIF
+
+        ELSE IF(MODEL.EQ.2)THEN
+
+         RMY=DABS(BMYII)/PMY
+         RMZ=DABS(BMZII)/PMZ
+
+         E6=1.15D0*(PPY**2.0D0)+(RMZ**2.0D0)+(RMY**4.0D0)
+     +     +3.67D0*(PPY**2.0D0)*(RMZ**2.0D0)
+     +     +3.00D0*(PPY**6.0D0)*(RMY**2.0D0)
+     +     +4.65D0*(RMZ**4.0D0)*(RMY**2.0D0)
+
+        END IF
+
+        IF(MODEL.EQ.1)THEN
+
+         EQN=2.0D0*DABS(BMYJJ)/(9.0D0*PMY)+2.0D0*DABS(BMZJJ)/(9.0D0*PMZ)
+
+         IF(PPY.LT.EQN) THEN
+           E7=PPY/2.0D0+DABS(BMYJJ)/PMY+DABS(BMZJJ)/PMZ
+         ELSE IF (PPY.GE.EQN) THEN
+           E7=PPY+8.0D0/9.0D0*(DABS(BMYJJ)/PMY+DABS(BMZJJ)/PMZ)
+         ENDIF
+
+        ELSE IF(MODEL.EQ.2)THEN
+
+         RMY=DABS(BMYJJ)/PMY
+         RMZ=DABS(BMZJJ)/PMZ
+
+         E7=1.15D0*(PPY**2.0D0)+(RMZ**2.0D0)+(RMY**4.0D0)
+     +     +3.67D0*(PPY**2.0D0)*(RMZ**2.0D0)
+     +     +3.00D0*(PPY**6.0D0)*(RMY**2.0D0)
+     +     +4.65D0*(RMZ**4.0D0)*(RMY**2.0D0)
+
+        END IF
+
+        EFAIL(2,IELEM)=E6
+        EFAIL(3,IELEM)=E7
+
+        IF(E6.GT.1.0D0.OR.E7.GT.1.0D0) THEN
+
+         WRITE(10,140) TOTLO,IELEM,E6,E7
+  140    FORMAT(F12.5,' ELE=',I4,3X,'I-NODE=',E12.5,3X,'J-NODE=',E12.5)
+
+        END IF
+
+        X1=DABS(AXIFO)/PY
+        Z1=DABS(BMZII)/PMZ
+        Y1=DABS(BMYII)/PMY
+
+        IF(E6.GT.1.0D0) THEN
+
+          IF(X1.GE.0.2D0) THEN
+
+            YPI=(9.0D0/8.0D0)*(Y1*(1-X1))/(Y1+Z1)
+            ZPI=(9.0D0/8.0D0)*(Z1*(1-X1))/(Y1+Z1)
+
+          ELSE
+
+            YPI=(Y1*(1-0.5D0*X1))/(Y1+Z1)
+            ZPI=(Z1*(1-0.5D0*X1))/(Y1+Z1)
+
+          END IF
+
+C          ELOAD(5,IELEM)=ELOAD(5,IELEM)-(Y1-YPI)*PMY
+C          ELOAD(6,IELEM)=ELOAD(6,IELEM)-(Z1-ZPI)*PMZ
+
+        END IF
+
+        X1=DABS(AXIFO)/PY
+        Z1=DABS(BMZJJ)/PMZ
+        Y1=DABS(BMYJJ)/PMY
+
+        IF(E7.GT.1.0D0) THEN
+
+          IF(X1.GE.0.2D0) THEN
+
+            YPJ=(9.0D0/8.0D0)*(Y1*(1-X1))/(Y1+Z1)
+            ZPJ=(9.0D0/8.0D0)*(Z1*(1-X1))/(Y1+Z1)
+
+          ELSE
+
+            YPJ=(Y1*(1-0.5D0*X1))/(Y1+Z1)
+            ZPJ=(Z1*(1-0.5D0*X1))/(Y1+Z1)
+
+          END IF
+
+C          ELOAD(11,IELEM)=ELOAD(11,IELEM)-(Y1-YPJ)*PMY
+C          ELOAD(12,IELEM)=ELOAD(12,IELEM)-(Z1-ZPJ)*PMZ
+
+        END IF
+
+        END IF
+
+  300 CONTINUE
+
+      RETURN
+      END
+
+C********************************************************************
+      SUBROUTINE RFRAME(EKMAT,ETMAT,LTYPE,NDIME,
+     +                  ELCOD,PROPS,ELFOR,ELDIS,
+     +                  EBASC,ETROT,EBMAT)         ! S.S.MA  03.12.22
+C********************************************************************
+C *** THIS SUBROUTINE IS TO FORM LOCAL ELEMENT STIFFNESS MATRIX
+C     AND COORDINATE TRANSFORMATION MATRIX
+
+C     EKMAT    LOCAL ELEMENT STIFFNESS MATRIX
+C     ETMAT    COORDINATE TRANSFORMATION MATRIX
+C     NDOFN    NUMBER OF DEGREE OF FREEDOM PER NODE
+C     NDIME    ORDER OF DIMENSION
+C     NEVAB    NUMBER OF ELEMENT VARIABLES
+C     NNODE    NUMBER OF NODES PER ELEMENT
+C     LPROP    MATRIAL PROPERTY NUMBER OF ELEMENT
+C     LNODS    NODAL CONNECTION NUMBERS OF ELEMENT
+C     LDOFS    CODE FOR STATE OF DEGREE OF FREEDOM OF ELEMENT
+C     ELCOD    COORDINATE OF ELEMENT
+C     PROPS    MATRIAL PROPERTY OF ELEMENT
+C     ELFOR    INCREMENTAL ELEMENT FORCE VECTOR
+C     ELDIS    INCREMENTAL ELEMENT DISPLACEMENT VECTOR
+
+      IMPLICIT DOUBLE PRECISION (A-H,O-Z)
+
+      DIMENSION EKMAT(12,12),ETMAT(12,12),DICOS(3,3)
+      DIMENSION ELCOD(3,3),PROPS(20),LTYPE(7)
+      DIMENSION ELFOR(12),ETROT(6,12),EBMAT(6,12),EBASC(6,6)
+      DIMENSION ELDIS(12)
+
+      PI=3.141592653589793238462643D0
+
+C********************************************************************
+C *** INITIALIZE DATA
+C********************************************************************
+
+      DO 105 I=1,6
+      DO 105 J=1,6
+
+        EBASC(I,J)=0.0D0
+
+  105 CONTINUE
+
+      DO 106 I=1,6
+      DO 106 J=1,12
+
+        ETROT(I,J)=0.0D0
+
+  106 CONTINUE
+
+      DO 107 I=1,3
+      DO 107 J=1,3
+
+        DICOS(I,J)=0.0D0
+
+  107 CONTINUE
+
+      XL=ELCOD(1,2)-ELCOD(1,1)
+      YL=ELCOD(2,2)-ELCOD(2,1)
+      ZL=ELCOD(3,2)-ELCOD(3,1)
+
+      AL=DSQRT(XL**2.0D0+YL**2.0D0+ZL**2.0D0)
+
+      AXIFO=ELFOR( 7)
+      BMYII=ELFOR( 5)
+      BMZII=ELFOR( 6)
+      BMYJJ=ELFOR(11)
+      BMZJJ=ELFOR(12)
+
+      PY =PROPS( 1)*PROPS(9)
+      PMZ=PROPS(10)*PROPS(9)
+      PMY=PROPS(11)*PROPS(9)
+
+C********************************************************************
+C *** MATERIAL PROPERTY		  S.S.MA 03.12.11
+C********************************************************************
+
+      YOUNG=PROPS(5)		! S.S.MA 03.12.11
+
+      ETA_A=1.0D0
+      ETA_B=1.0D0
+
+C********************************************************************
+C *** MATERIAL PROPERTY
+C********************************************************************
+
+      EA=YOUNG*PROPS(1)
+      EIZ=YOUNG*PROPS(2)
+      EIY=YOUNG*PROPS(3)
+
+      GJ=PROPS(4)*PROPS(6)
+
+      GASY=PROPS(7)*PROPS(6)
+      GASZ=PROPS(8)*PROPS(6)
+
+C********************************************************************
+C *** GEOMETRIC NONLINEARITY : STABILITY FUNCTIONS
+C********************************************************************
+
+      S1=4.0D0
+      S2=2.0D0
+      S3=4.0D0
+      S4=2.0D0
+
+      RHO=(AXIFO*AL**2.0D0)/(EIZ*PI**2.0D0)
+
+      IF (DABS(RHO).LE.2.0D0) THEN
+
+        VAL01=((1.0D-02*RHO+5.43D-01)/(4.0D0+RHO)
+     +         +(4.0D-03*RHO+2.85D-01)/(8.183D0+RHO))*RHO**2
+        VAL02=((1.0D-02*RHO+5.43D-01)/(4.0D0+RHO)
+     +         -(4.0D-03*RHO+2.85D-01)/(8.183D0+RHO))*RHO**2
+
+        S1=(4.0D0+2.0D0*PI**2.0D0*RHO/15.0D0-VAL01)
+        S2=(2.0D0-PI**2.0D0*RHO/30.0D0+VAL02)
+
+      ELSE IF (DABS(RHO).GT.2.0D0) THEN
+
+        EKLEN=PI*DSQRT(DABS(RHO))
+
+        IF (RHO.LT.0.0D0) THEN
+
+          VALUE=2.0D0-2.0D0*DCOS(EKLEN)-EKLEN*DSIN(EKLEN)
+
+          S1=(EKLEN*DSIN(EKLEN)-EKLEN**2.0D0*DCOS(EKLEN))/VALUE
+          S2=(EKLEN**2.0D0-EKLEN*DSIN(EKLEN))/VALUE
+
+        ELSE IF (RHO.GT.0.0D0) THEN
+
+          VALUE=2.0D0-2.0D0*DCOSH(EKLEN)+EKLEN*DSINH(EKLEN)
+
+          S1=(EKLEN**2.0D0*DCOSH(EKLEN)-EKLEN*DSINH(EKLEN))/VALUE
+          S2=(EKLEN*DSINH(EKLEN)-EKLEN**2.0D0)/VALUE
+
+        ENDIF
+
+      ENDIF
+
+      RHO=(AXIFO*AL**2.0D0)/(EIY*PI**2.0D0)
+
+      IF (DABS(RHO).LE.2.0D0) THEN
+
+        VAL01=((1.0D-02*RHO+5.43D-01)/(4.0D0+RHO)
+     +         +(4.0D-03*RHO+2.85D-01)/(8.183D0+RHO))*RHO**2
+        VAL02=((1.0D-02*RHO+5.43D-01)/(4.0D0+RHO)
+     +         -(4.0D-03*RHO+2.85D-01)/(8.183D0+RHO))*RHO**2
+
+        S3=(4.0D0+2.0D0*PI**2.0D0*RHO/15.0D0-VAL01)
+        S4=(2.0D0-PI**2.0D0*RHO/30.0D0+VAL02)
+
+      ELSE IF (DABS(RHO).GT.2.0D0) THEN
+
+        EKLEN=PI*DSQRT(DABS(RHO))
+
+        IF (RHO.LT.0.0D0) THEN
+
+          VALUE=2.0D0-2.0D0*DCOS(EKLEN)-EKLEN*DSIN(EKLEN)
+
+          S3=(EKLEN*DSIN(EKLEN)-EKLEN**2.0D0*DCOS(EKLEN))/VALUE
+          S4=(EKLEN**2.0D0-EKLEN*DSIN(EKLEN))/VALUE
+
+        ELSE IF (RHO.GT.0.0D0) THEN
+
+          VALUE=2.0D0-2.0D0*DCOSH(EKLEN)+EKLEN*DSINH(EKLEN)
+
+          S3=(EKLEN**2.0D0*DCOSH(EKLEN)-EKLEN*DSINH(EKLEN))/VALUE
+          S4=(EKLEN*DSINH(EKLEN)-EKLEN**2.0D0)/VALUE
+
+        ENDIF
+
+      ENDIF
+
+C********************************************************************
+C *** FIND COEFFICIENT IN LOCAL AXIS 3-3
+C********************************************************************
+
+      CIIZZ=ETA_A*(S1-(S2**2.0D0/S1)*(1.0D0-ETA_B))*(EIZ/AL)
+      CIJZZ=ETA_A*ETA_B*S2*(EIZ/AL)
+      CJJZZ=ETA_B*(S1-(S2**2.0D0/S1)*(1.0D0-ETA_A))*(EIZ/AL)
+
+      IF(CIIZZ.NE.0.0D0.AND.CIJZZ.NE.0.0D0.AND.CJJZZ.NE.0.0D0.AND.
+     +   GASY.GT.0.0D0) CALL COSHEF(CIIZZ,CIJZZ,CJJZZ,GASY,AL)
+
+C********************************************************************
+C     FIND COEFFICIENT IN LOCAL AXIS 2-2
+C********************************************************************
+
+      CIIYY=ETA_A*(S3-(S4**2.0D0/S3)*(1.0D0-ETA_B))*(EIY/AL)
+      CIJYY=ETA_A*ETA_B*S4*(EIY/AL)
+      CJJYY=ETA_B*(S3-(S4**2.0D0/S3)*(1.0D0-ETA_A))*(EIY/AL)
+
+      IF(CIIYY.NE.0.0D0.AND.CIJYY.NE.0.0D0.AND.CJJYY.NE.0.0D0.AND.
+     +   GASZ.GT.0.0D0) CALL COSHEF(CIIYY,CIJYY,CJJYY,GASZ,AL)
+
+C********************************************************************
+C *** FORM BASIC ELEMENT STIFFNESS (6 BY 6) MATRIX
+C********************************************************************
+
+      EBASC( 1, 1)= EA/AL
+      EBASC( 2, 2)= CIIYY
+      EBASC( 2, 3)= CIJYY
+      EBASC( 3, 2)= CIJYY
+      EBASC( 3, 3)= CJJYY
+      EBASC( 4, 4)= CIIZZ
+      EBASC( 4, 5)= CIJZZ
+      EBASC( 5, 4)= CIJZZ
+      EBASC( 5, 5)= CJJZZ
+      EBASC( 6, 6)= GJ/AL
+
+C********************************************************************
+C *** FORM TRANSFORMATION MATRIX
+C********************************************************************
+
+      ETROT( 1, 1)=-1.0D0
+      ETROT( 1, 7)= 1.0D0
+      ETROT( 2, 3)=-1.0D0/AL
+      ETROT( 2, 5)= 1.0D0
+      ETROT( 2, 9)= 1.0D0/AL
+      ETROT( 3, 3)=-1.0D0/AL
+      ETROT( 3, 9)= 1.0D0/AL
+      ETROT( 3,11)= 1.0D0
+      ETROT( 4, 2)= 1.0D0/AL
+      ETROT( 4, 6)= 1.0D0
+      ETROT( 4, 8)=-1.0D0/AL
+      ETROT( 5, 2)= 1.0D0/AL
+      ETROT( 5, 8)=-1.0D0/AL
+      ETROT( 5,12)= 1.0D0
+      ETROT( 6, 4)= 1.0D0
+      ETROT( 6,10)=-1.0D0
+
+C********************************************************************
+C *** FORM ELEMENT STIFFNESS (12 BY 12) MATRIX
+C********************************************************************
+
+      DO 115 I=1,6
+      DO 115 J=1,12
+
+        EBMAT(I,J)=0.0D0
+
+        DO 115 K=1,6
+
+          EBMAT(I,J)=EBMAT(I,J)+EBASC(I,K)*ETROT(K,J)
+
+  115 CONTINUE
+
+      DO 116 I=1,12
+      DO 116 J=1,12
+
+        EKMAT(I,J)=0.0D0
+
+        DO 116 K=1,6
+
+          EKMAT(I,J)=EKMAT(I,J)+ETROT(K,I)*EBMAT(K,J)
+
+  116 CONTINUE
+
+C********************************************************************
+C *** FORM DIRECTION COSINE AND COORDINATE TRANSFORMATION MATRIX
+C********************************************************************
+
+      TMP01 = 0.0D0
+
+      DO 300 IDIME = 1,NDIME
+
+         TMP02=ELCOD(IDIME,2)-ELCOD(IDIME,1)
+
+         TMP02=TMP02+ELDIS(IDIME+6)-ELDIS(IDIME)  ! UPDATE
+
+         DICOS(1,IDIME) = TMP02
+
+         TMP01=TMP01+TMP02**2
+
+  300 CONTINUE
+
+      TMP01 = DSQRT(TMP01) ! ELASTIC PORTION LENGTH
+
+      DO 400 IDIME = 1,NDIME
+
+        DICOS(1,IDIME) = DICOS(1,IDIME)/TMP01
+
+  400 CONTINUE
+
+      IF(ELCOD(2,3).EQ.9.AND.ELCOD(3,3).EQ.17) THEN
+
+        DICOS(3,1)=0.0D0
+        DICOS(3,2)=0.0D0
+        DICOS(3,3)=0.0D0
+
+        IF(ELCOD(1,3).EQ.-1) DICOS(3,3)=1.0
+        IF(ELCOD(1,3).EQ.-2) DICOS(3,2)=1.0
+        IF(ELCOD(1,3).EQ.-3) DICOS(3,1)=1.0
+        IF(ELCOD(1,3).EQ.-4) DICOS(3,3)=-1.0
+        IF(ELCOD(1,3).EQ.-5) DICOS(3,2)=-1.0
+        IF(ELCOD(1,3).EQ.-6) DICOS(3,1)=-1.0
+
+      ELSE
+
+        TMP01 = 0.0D0
+
+        DO 500 IDIME = 1,NDIME
+
+           TMP02 = ELCOD(IDIME,3) - ELCOD(IDIME,1)
+
+           DICOS(2,IDIME) = TMP02
+
+           TMP01=TMP01+TMP02**2
+
+  500   CONTINUE
+
+        TMP01=DSQRT(TMP01)
+
+        DICOS(3,1)=DICOS(1,2)*DICOS(2,3)-DICOS(1,3)*DICOS(2,2)
+        DICOS(3,2)=DICOS(1,3)*DICOS(2,1)-DICOS(1,1)*DICOS(2,3)
+        DICOS(3,3)=DICOS(1,1)*DICOS(2,2)-DICOS(1,2)*DICOS(2,1)
+
+        TMP01=DSQRT(DICOS(3,1)**2+DICOS(3,2)**2+DICOS(3,3)**2)
+
+        DO 600 IDIME=1,NDIME
+
+          DICOS(3,IDIME) = DICOS(3,IDIME)/TMP01
+
+  600   CONTINUE
+
+      END IF
+
+      DICOS(2,1)=DICOS(3,2)*DICOS(1,3)-DICOS(3,3)*DICOS(1,2)
+      DICOS(2,2)=DICOS(3,3)*DICOS(1,1)-DICOS(3,1)*DICOS(1,3)
+      DICOS(2,3)=DICOS(3,1)*DICOS(1,2)-DICOS(3,2)*DICOS(1,1)
+
+      DO 700 IPOSI=1,4    ! NPOSI=4 :  NPOSI=NEVAB/NDIME
+
+       JPOSI = (IPOSI-1)*NDIME
+
+       DO 700 IDIME = 1,NDIME
+       DO 700 JDIME = 1,NDIME
+
+         ETMAT(JPOSI+IDIME,JPOSI+JDIME) = DICOS(IDIME,JDIME)
+
+  700 CONTINUE
+
+      RETURN
+      END
+
+C********************************************************************
+      SUBROUTINE RTRUSS(EKMAT,ETMAT,NDIME,
+     +                  ELCOD,PROPS,ELFOR,ELDIS,
+     +                  EBASC,ETROT,EBMAT,AXIFO2)  ! S.S.MA  03.12.22
+C********************************************************************
+C *** THIS SUBROUTINE IS TO FORM LOCAL ELEMENT STIFFNESS MATRIX
+C     AND COORDINATE TRANSFORMATION MATRIX
+
+C     EKMAT    LOCAL ELEMENT STIFFNESS MATRIX
+C     ETMAT    COORDINATE TRANSFORMATION MATRIX
+C     NDOFN    NUMBER OF DEGREE OF FREEDOM PER NODE
+C     NDIME    ORDER OF DIMENSION
+C     NEVAB    NUMBER OF ELEMENT VARIABLES
+C     NNODE    NUMBER OF NODES PER ELEMENT
+C     LPROP    MATRIAL PROPERTY NUMBER OF ELEMENT
+C     LNODS    NODAL CONNECTION NUMBERS OF ELEMENT
+C     LDOFS    CODE FOR STATE OF DEGREE OF FREEDOM OF ELEMENT
+C     ELCOD    COORDINATE OF ELEMENT
+C     PROPS    MATRIAL PROPERTY OF ELEMENT
+C     ELFOR    INCREMENTAL ELEMENT FORCE VECTOR
+C     ELDIS    INCREMENTAL ELEMENT DISPLACEMENT VECTOR
+
+      IMPLICIT DOUBLE PRECISION (A-H,O-Z)
+
+      DIMENSION EKMAT(12,12),ETMAT(12,12),DICOS(3,3)
+      DIMENSION ELCOD(3,3),PROPS(20)
+      DIMENSION ELFOR(12),ETROT(6,12),EBMAT(6,12),EBASC(6,6)
+      DIMENSION ELDIS(12)
+
+      PI=3.141592653589793238462643D0
+
+C********************************************************************
+C *** INITIALIZE DATA
+C********************************************************************
+
+      DO 105 I=1,6
+      DO 105 J=1,6
+
+        EBASC(I,J)=0.0D0
+
+  105 CONTINUE
+
+      DO 106 I=1,6
+      DO 106 J=1,12
+
+        ETROT(I,J)=0.0D0
+
+  106 CONTINUE
+
+      DO 107 I=1,3
+      DO 107 J=1,3
+
+        DICOS(I,J)=0.0D0
+
+  107 CONTINUE
+
+      XL=ELCOD(1,2)-ELCOD(1,1)
+      YL=ELCOD(2,2)-ELCOD(2,1)
+      ZL=ELCOD(3,2)-ELCOD(3,1)
+
+      AL=DSQRT(XL**2.0D0+YL**2.0D0+ZL**2.0D0)
+
+      AXIFO=ELFOR( 7)
+
+      PY =PROPS( 1)*PROPS(9)
+
+C********************************************************************
+C *** MATERIAL PROPERTY			S.S.MA 03.12.11
+C ***	SECANT ELASTIC MODULUS FOR CABLE   S.S.MA 03.12.23
+C********************************************************************
+
+      EYOUNG=PROPS(5)			! S.S.MA 03.12.11
+
+c	WEI=PROPS(18)			  ! S.S.MA 03.12.23
+
+c      SEC1=((WEI*props(1)*XL)**2.0D0)*(AXIFO2+ELFOR( 7))*EYOUNG*PROPS(1)
+c	SEC2=24.0D0*(AXIFO2**2.0D0)*(ELFOR( 7)**2.0D0)
+
+c	IF(SEC2.EQ.0.0D0) THEN
+	 YOUNG=EYOUNG
+c	ELSE IF(SEC2.GT.0.0D0) THEN 
+c	 YOUNG=EYOUNG/(1.0D0+SEC1/SEC2)
+c	ENDIF
+
+c	IF(AXIFO.LT.0.0D0) YOUNG=0.0D0	! S.S.MA 03.12.20
+
+C********************************************************************
+C *** MATERIAL PROPERTY
+C********************************************************************
+
+      EA=YOUNG*PROPS(1)
+
+C********************************************************************
+C *** FORM BASIC ELEMENT STIFFNESS MATRIX
+C********************************************************************
+
+      EBASC( 1, 1)= EA/AL
+
+C********************************************************************
+C *** FORM TRANSFORMATION MATRIX
+C********************************************************************
+
+      ETROT( 1, 1)=-1.0D0
+      ETROT( 1, 7)= 1.0D0
+      ETROT( 2, 3)=-1.0D0/AL
+      ETROT( 2, 5)= 1.0D0
+      ETROT( 2, 9)= 1.0D0/AL
+      ETROT( 3, 3)=-1.0D0/AL
+      ETROT( 3, 9)= 1.0D0/AL
+      ETROT( 3,11)= 1.0D0
+      ETROT( 4, 2)= 1.0D0/AL
+      ETROT( 4, 6)= 1.0D0
+      ETROT( 4, 8)=-1.0D0/AL
+      ETROT( 5, 2)= 1.0D0/AL
+      ETROT( 5, 8)=-1.0D0/AL
+      ETROT( 5,12)= 1.0D0
+      ETROT( 6, 4)= 1.0D0
+      ETROT( 6,10)=-1.0D0
+
+C********************************************************************
+C *** FORM LOCAL ELEMENT STIFFNESS (12 BY 12) MATRIX
+C *** IN ASSEMBLING, TO 6 BY 6
+C********************************************************************
+
+      DO 115 I=1,6
+      DO 115 J=1,12
+
+        EBMAT(I,J)=0.0D0
+
+        DO 115 K=1,6
+
+          EBMAT(I,J)=EBMAT(I,J)+EBASC(I,K)*ETROT(K,J)
+
+  115 CONTINUE
+
+      DO 116 I=1,12
+      DO 116 J=1,12
+
+        EKMAT(I,J)=0.0D0
+
+        DO 116 K=1,6
+
+          EKMAT(I,J)=EKMAT(I,J)+ETROT(K,I)*EBMAT(K,J)
+
+  116 CONTINUE
+
+C********************************************************************
+C *** FORM DIRECTION COSINE AND COORDINATE TRANSFORMATION MATRIX
+C********************************************************************
+
+      TMP01 = 0.0D0
+
+      DO 300 IDIME = 1,NDIME
+
+         TMP02=ELCOD(IDIME,2)-ELCOD(IDIME,1)
+
+         TMP02=TMP02+ELDIS(IDIME+6)-ELDIS(IDIME)  ! UPDATE
+
+         DICOS(1,IDIME) = TMP02
+
+         TMP01=TMP01+TMP02**2
+
+  300 CONTINUE
+
+      TMP01 = DSQRT(TMP01) ! ELASTIC PORTION LENGTH
+
+      DO 400 IDIME = 1,NDIME
+
+        DICOS(1,IDIME) = DICOS(1,IDIME)/TMP01
+
+  400 CONTINUE
+
+      IF(ELCOD(2,3).EQ.9.AND.ELCOD(3,3).EQ.17) THEN
+
+        DICOS(3,1)=0.0D0
+        DICOS(3,2)=0.0D0
+        DICOS(3,3)=0.0D0
+
+        IF(ELCOD(1,3).EQ.-1) DICOS(3,3)=1.0
+        IF(ELCOD(1,3).EQ.-2) DICOS(3,2)=1.0
+        IF(ELCOD(1,3).EQ.-3) DICOS(3,1)=1.0
+        IF(ELCOD(1,3).EQ.-4) DICOS(3,3)=-1.0
+        IF(ELCOD(1,3).EQ.-5) DICOS(3,2)=-1.0
+        IF(ELCOD(1,3).EQ.-6) DICOS(3,1)=-1.0
+
+      ELSE
+
+        TMP01 = 0.0D0
+
+        DO 500 IDIME = 1,NDIME
+
+           TMP02 = ELCOD(IDIME,3) - ELCOD(IDIME,1)
+
+           DICOS(2,IDIME) = TMP02
+
+           TMP01=TMP01+TMP02**2
+
+  500   CONTINUE
+
+        TMP01=DSQRT(TMP01)
+
+        DICOS(3,1)=DICOS(1,2)*DICOS(2,3)-DICOS(1,3)*DICOS(2,2)
+        DICOS(3,2)=DICOS(1,3)*DICOS(2,1)-DICOS(1,1)*DICOS(2,3)
+        DICOS(3,3)=DICOS(1,1)*DICOS(2,2)-DICOS(1,2)*DICOS(2,1)
+
+        TMP01=DSQRT(DICOS(3,1)**2+DICOS(3,2)**2+DICOS(3,3)**2)
+
+        DO 600 IDIME=1,NDIME
+
+          DICOS(3,IDIME) = DICOS(3,IDIME)/TMP01
+
+  600   CONTINUE
+
+      END IF
+
+      DICOS(2,1)=DICOS(3,2)*DICOS(1,3)-DICOS(3,3)*DICOS(1,2)
+      DICOS(2,2)=DICOS(3,3)*DICOS(1,1)-DICOS(3,1)*DICOS(1,3)
+      DICOS(2,3)=DICOS(3,1)*DICOS(1,2)-DICOS(3,2)*DICOS(1,1)
+
+      DO 700 IPOSI=1,4    ! NPOSI=4 :  NPOSI=NEVAB/NDIME
+
+       JPOSI = (IPOSI-1)*NDIME
+
+       DO 700 IDIME = 1,NDIME
+       DO 700 JDIME = 1,NDIME
+
+         ETMAT(JPOSI+IDIME,JPOSI+JDIME) = DICOS(IDIME,JDIME)
+
+  700 CONTINUE
+
+      RETURN
+      END
+
+
+C********************************************************************
+      SUBROUTINE RESULT(TDISP,ASDIS,TLOAD,ELOAD,DETER,MEVAB,NEQNS,
+     +                  NPOIN,NTOTV,IFFIX,ASLOD,IINCS,FACTO,TOTLO,PLOAD,
+     +                  INIEND,CONTROL)
+C********************************************************************
+C *** THIS SUBROUTINE IS TO WRITE RESULTS TO OUTPUT FILE
+
+C     TDISP   TOTAL DISPLACEMENT
+C     TLOAD   TOTAL LOAD
+C     ELOAD   TOTAL LOAD
+C     ASDIS   INCREMENTAAL DISPLACEMENT
+C     NEQNS   NUMBER OF EQUATION
+
+      IMPLICIT DOUBLE PRECISION (A-H,O-Z)
+
+      DIMENSION TDISP(*),ASDIS(*),TLOAD(MEVAB,*),ELOAD(MEVAB,*)
+      DIMENSION ASLOD(*)
+      DIMENSION LNODS(2),LDOFS(12),ELCOD(3,3),PROPS(20),LTYPE(7)
+      DIMENSION ELFOR(12),PLOAD(*)
+
+      DIMENSION RTEMP(NTOTV),IFFIX(*)
+	DIMENSION RTEMP2(NTOTV),U(NTOTV)          !S.S.MA 04.01.13
+
+      REWIND 12
+
+      READ(12) NELEM,NEVAB,NNODE,NDOFN,NDIME
+
+C********************************************************************
+C *** PRINT DETERMINANT
+C********************************************************************
+
+      IF(DETER.LE.0.0D0) THEN
+
+        WRITE(13,220)
+        WRITE(15,220)
+        WRITE(24,220)	   ! S.S.MA 04.03.17
+
+  220   FORMAT(/,' *** STRUCTURE UNSTABLE *** ')
+
+        STOP
+
+      ELSE
+
+        WRITE(13,195) TOTLO
+        WRITE(15,195) TOTLO
+        WRITE(24,195) TOTLO	! S.S.MA 04.03.17
+  195   FORMAT(/,4X,28('*'),/,4X,' LOAD FACTOR = ',F12.5,/,4X,28('*'),/)
+
+        WRITE(*,123) TOTLO,IINCS,FACTO
+  123   FORMAT(5X,'TOTAL FACTOR = ',F10.5,7X,'IINCS = ',I5,
+     +         7X,'FACTO = ',F10.5)
+
+        WRITE(13,210) DETER
+        WRITE(15,210) DETER
+        WRITE(24,210) DETER	! S.S.MA 04.03.17
+
+  210   FORMAT(' DETERMINATE OF SYSTEM = ',E12.5)
+
+      END IF
+
+C********************************************************************
+C *** PRINT TOTAL LOAD
+C********************************************************************
+
+      WRITE(14) IINCS
+      WRITE(16) IINCS
+
+      DO 50 IEQNS=1,NEQNS
+
+        PLOAD(IEQNS)=PLOAD(IEQNS)+ASLOD(IEQNS)
+
+   50 CONTINUE
+
+      DO 100 IPOIN=1,NPOIN
+      DO 100 IDOFN=1,NDOFN
+
+        IVALU=(IPOIN-1)*NDOFN+IDOFN
+        JVALU=IFFIX(IVALU)
+
+        RTEMP(IVALU)=0.0D0
+
+        IF(JVALU.GT.0) RTEMP(IVALU)=PLOAD(JVALU)
+
+  100 CONTINUE
+
+      WRITE(13,110)
+      WRITE(24,110)				 ! S.S.MA 04.03.17
+  110 FORMAT(/,' TOTAL LOAD ',/)
+
+      DO 130 IPOIN=1,NPOIN
+
+        IVALU=(IPOIN-1)*NDOFN
+
+        WRITE(13,120) IPOIN,(RTEMP(IVALU+IDOFN),IDOFN=1,NDOFN)
+        WRITE(24,120) IPOIN,(RTEMP(IVALU+IDOFN),IDOFN=1,NDOFN)  ! S.S.MA 
+  120   FORMAT(I3,2X,6E12.5)
+
+  130 CONTINUE
+
+      WRITE(14) RTEMP
+
+C********************************************************************
+C *** PRINT TOTAL DISPLACEMENT
+C********************************************************************
+
+      DO 200 IEQNS=1,NEQNS
+
+        TDISP(IEQNS)=TDISP(IEQNS)+ASDIS(IEQNS)
+
+  200 CONTINUE
+
+      DO 300 IPOIN=1,NPOIN
+      DO 300 IDOFN=1,NDOFN
+
+        IVALU=(IPOIN-1)*NDOFN+IDOFN
+        JVALU=IFFIX(IVALU)
+
+        RTEMP(IVALU)=0.0D0
+
+        IF(JVALU.GT.0) RTEMP(IVALU)=TDISP(JVALU)
+
+  300 CONTINUE
+
+      WRITE(13,140)
+      WRITE(24,140)					   ! S.S.MA 04.03.17
+  140 FORMAT(/,' TOTAL DISPLACEMENT ',/)
+
+	  REWIND 21		  !S.S.MA 04.01.13 
+
+      DO 160 IPOIN=1,NPOIN
+
+        IVALU=(IPOIN-1)*NDOFN
+
+	  READ(21,*) INUM,U(1),U(2),U(3),U(4),U(5),U(6)	 !S.S.MA 04.01.13 
+
+	  DO 260 II=1,NDOFN	   		                     !S.S.MA 04.01.13 
+	  RTEMP2(IVALU+II)=RTEMP(IVALU+II)-U(II)
+
+
+  260	  CONTINUE
+
+        WRITE(13,150) IPOIN,(RTEMP2(IVALU+IDOFN),IDOFN=1,NDOFN)
+        WRITE(24,150) IPOIN,(RTEMP(IVALU+IDOFN),IDOFN=1,NDOFN) ! S.S.MA
+  150   FORMAT(I3,2X,6E12.5)
+
+  160 CONTINUE
+
+	!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!	
+      !  L.F=1.0일 때의 전체 절점의 변위를 합하여 종료조건을 검사!
+      !                                		  !S.S.MA 04.01.13 !
+      !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!	
+         ESUM=0.0D0											   !
+	   INIEND=0												   !
+	                                                           !
+	DO 177 IQ=1,NPOIN										   !
+	    IVALU=(IQ-1)*NDOFN									   !
+        IF(TOTLO.GT.0.99999.and.TOTLO.LT.1.00001)THEN	   		   !
+	    ABC=0.0D0											   !
+	    SUM=0.0D0											   !
+		ABC=RTEMP2(IVALU+1)**2.0D0							   !
+     +	   +RTEMP2(IVALU+2)**2.0D0+RTEMP2(IVALU+3)**2.0D0	   !
+	                                                           ! 
+          SUM=DSQRT(ABC)										   !
+	                                                           !
+	    ESUM=ESUM+SUM										   !
+	                                                           !
+          WRITE(23,165) IQ,(RTEMP2(IVALU+IDOFN),IDOFN=1,NDOFN)   !
+  165     FORMAT(I3,2X,6E12.5)  								   !
+                                                                 !
+	  ENDIF													   !
+	                                                           !    
+  177 CONTINUE												   !
+                                                                 !
+        IF(TOTLO.GT.0.99999.and.TOTLO.LT.1.00001)THEN	   		   !
+     	   WRITE(*,*)											   !
+	   WRITE(*,*)'SUMMATION OF DISP(1~3)= ',ESUM			   !
+	   WRITE(*,*)	                                           !
+	   WRITE(23,*)	                                           !
+	   WRITE(23,*)'SUMMATION OF DISP(U1~U3)= ',ESUM	           !
+	  ENDIF													   !
+	                                                           !
+	   IF(ESUM.LT.CONTROL) INIEND=1							   !
+      !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+		IF(INIEND.EQ.1) GOTO 777     !S.S.MA 04.03.03
+	!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!	
+      !  L.F=1.0일 때의 초기변위로 사용할 값들을 				   !
+      !   'XXX.INIDISP'에 저장한다.			  !S.S.MA 04.01.13 !
+      !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!	
+	  REWIND 21												   !
+                                                                 !
+	DO 175 IO=1,NPOIN										   !
+	    IVALU=(IO-1)*NDOFN									   !
+        IF(TOTLO.GT.0.99999.and.TOTLO.LT.1.00001)THEN	   		   !
+          WRITE(21,155) IO,(RTEMP(IVALU+IDOFN),IDOFN=1,NDOFN)    !
+	  ENDIF													   !
+  155     FORMAT(I3,2X,6E12.5)  								   !
+  175 CONTINUE												   !
+      !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
+
+  777 WRITE(14) RTEMP
+
+C********************************************************************
+C *** PRINT ELEMENT FORCE
+C********************************************************************
+
+      DO 400 IELEM=1,NELEM
+
+        READ(12) JELEM,LPROP,LNODS,LDOFS,ELCOD,PROPS,LTYPE
+
+        DO 400 INODE=1,NNODE
+        DO 400 IDOFN=1,NDOFN
+
+          IVALU=(LNODS(INODE)-1)*NDOFN+IDOFN
+          JVALU=(INODE-1)*NDOFN+IDOFN
+
+          TLOAD(JVALU,IELEM)=ELOAD(JVALU,IELEM)
+
+  400 CONTINUE
+
+      WRITE(15,170)
+  170 FORMAT(/,' ELEMENT FORCE ',/)
+
+      DO 190 IELEM=1,NELEM
+
+        WRITE(15,180) IELEM,(TLOAD(IEVAB,IELEM),IEVAB=1,NEVAB)
+  180   FORMAT(I3,2X,6E12.5,/,5X,6E12.5)
+
+  190 CONTINUE
+
+C!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!	
+		IF(INIEND.EQ.1) GOTO 888     !S.S.MA 04.03.03
+C!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!	
+C   초기형상해석을 위한 비선형해석의 마지막 단계인 L.F=1.0인 경우에  		   !
+C   발생한 부재력들 중  케이블의 장력성분이 등가탄성계수에 사용될 수 있도록  !
+C   'XXX.INIFOR'에 저장한다.												   !
+C!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!	
+      IF(TOTLO.GT.0.99999.and.TOTLO.LT.1.00001)THEN	   !S.S.MA 03.12.22	   !
+        REWIND 19															   !
+																		   !	 
+      DO 1900 IELEM=1,NELEM												   !
+																		   !	 
+        WRITE(19,1800) IELEM,TLOAD(7,IELEM),TLOAD(5,IELEM),				   !
+     +                 TLOAD(6,IELEM),TLOAD(11,IELEM),TLOAD(12,IELEM)		   !
+ 1800   FORMAT(I3,2X,E12.5,2X,E12.5,2X,E12.5,2X,E12.5,2X,E12.5)			   !
+ 1900 CONTINUE															   !
+	ENDIF																   !
+C!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
+  888 DO 600 IELEM=1,NELEM
+
+        DO 500 IEVAB=1,NEVAB
+
+           ELFOR(IEVAB)=TLOAD(IEVAB,IELEM)
+
+  500   CONTINUE
+
+        WRITE(16) ELFOR
+
+  600 CONTINUE
+
+
+      RETURN
+      END
+
+
+C********************************************************************
+      SUBROUTINE FSAVE(IELEM,LPROP,LNODS,LDOFS,ELCOD,PROPS,LTYPE)
+C********************************************************************
+C *** THIS SUBROUTINE IS TO ECHO INPUT DATA
+
+C     IELEM   ELEMENT NUMBER
+C     LPROP   MATRIAL PROPERTY NUMBER OF ELEMENT
+C     LNODS   NODAL CONNECTION NUMBERS OF ELEMENT
+C     LDOFS   CODE FOR STATE OF DEGREE OF FREEDOM OF ELEMENT
+C     ELCOD   COORDINATE OF ELEMENT
+C     PROPS   MATRIAL PROPERTY OF ELEMENT
+
+      IMPLICIT DOUBLE PRECISION (A-H,O-Z)
+
+      DIMENSION LNODS(2),LDOFS(12),ELCOD(3,3)
+      DIMENSION PROPS(20),LTYPE(7)
+
+      WRITE(11,110) IELEM,LPROP,(LNODS(I),I=1,2),(LDOFS(I),I=1,12),
+     +     (ELCOD(1,I),I=1,3),(ELCOD(2,I),I=1,3),(ELCOD(3,I),I=1,3)
+
+  110 FORMAT(//,1X,' NO OF ELEMENT = ',I5,
+     +       //,5X,' NO OF MATRIAL PROPERTY = ',I5,
+     +       //,5X,' I-NODE   J-NODE    DEGREE OF FREEDOM ',
+     +       //,5X,I4,5X,I4,5X,12I4,
+     +       //,5X,' I-COORDINATE    J-COORDINATE     K-COODINATE',
+     +       //,3X,3E15.5,/,3X,3E15.5,/,3X,3E15.5)
+
+      WRITE(12) IELEM,LPROP,LNODS,LDOFS,ELCOD,PROPS,LTYPE
+
+      RETURN
+      END
+
+C********************************************************************
+      SUBROUTINE SYSTEM(XXLINE,NINCS,NANAL,FACTO,NCASE)
+C********************************************************************
+C *** THIS SUBROUTINE IS TO READ JOINTS DATA BLOCK FROM INPUT FILE
+
+C     XXLINE  STRING
+C     NOPOI   NODAL NUMBER OF EACH NODAL POINT
+C     COORD   COORDINATE OF EACH NODAL POINT
+C     NPOIN   NUMBER OF NODAL POINTS
+C     MDIME   MAXIMUM ORDER OF DIMENSION
+
+      IMPLICIT DOUBLE PRECISION (A-H,O-Z)
+
+      DIMENSION ITEMP(1),RTEMP(1)
+
+      CHARACTER XXLINE*250
+
+      NINCS=10000
+      NCASE=1
+      NANAL=1
+      FACTO=0.01D0
+
+      ITEMP(1)=0
+      CALL IREAD(XXLINE,'AM=',3,ITEMP(1),1)
+      IF(ITEMP(1).NE.0) NANAL=ITEMP(1)
+
+      RTEMP(1)=0.0D0
+      CALL RREAD(XXLINE,'FACTO=',6,RTEMP(1),1)
+      IF(RTEMP(1).NE.0.0D0) FACTO=RTEMP(1)
+
+      ITEMP(1)=0
+      CALL IREAD(XXLINE,'NINCS=',6,ITEMP(1),1)
+      IF(ITEMP(1).NE.0) NINCS=ITEMP(1)
+
+      ITEMP(1)=0
+      CALL IREAD(XXLINE,'L=',2,ITEMP(1),1)
+      IF(ITEMP(1).NE.0) NCASE=ITEMP(1)
+
+      RETURN
+      END
+
+C********************************************************************
+      SUBROUTINE JOINTS(XXLINE,NOPOI,COORD,MDIME,NPOIN)
+C********************************************************************
+C *** THIS SUBROUTINE IS TO READ JOINTS DATA BLOCK FROM INPUT FILE
+
+C     XXLINE  STRING
+C     NOPOI   NODAL NUMBER OF EACH NODAL POINT
+C     COORD   COORDINATE OF EACH NODAL POINT
+C     NPOIN   NUMBER OF NODAL POINTS
+C     MDIME   MAXIMUM ORDER OF DIMENSION
+
+      IMPLICIT DOUBLE PRECISION (A-H,O-Z)
+
+      DIMENSION NOPOI(100),COORD(MDIME,100),U(6)
+
+      CHARACTER XXLINE*250
+
+      NPOIN=NPOIN+1
+
+      READ(XXLINE,*) NOPOI(NPOIN)
+
+      CALL RREAD(XXLINE,'X=',2,COORD(1,NPOIN),1)
+      CALL RREAD(XXLINE,'Y=',2,COORD(2,NPOIN),1)
+      CALL RREAD(XXLINE,'Z=',2,COORD(3,NPOIN),1)
+
+      READ(21,*) INUM,U(1),U(2),U(3),U(4),U(5),U(6)	 !S.S.MA 04.01.13 
+
+	COORD(1,NPOIN)=COORD(1,NPOIN)-U(1)		  !S.S.MA
+	COORD(2,NPOIN)=COORD(2,NPOIN)-U(2)		  !S.S.MA
+	COORD(3,NPOIN)=COORD(3,NPOIN)-U(3)		  !S.S.MA
+
+      RETURN
+      END
+
+C********************************************************************
+      SUBROUTINE RESTRAINTS(XXLINE,NOFIX,IFPRE,MDOFN,NVFIX)
+C********************************************************************
+C *** THIS SUBROUTINE IS TO READ RESTRAINTS DATA BLOCK FROM INPUT FILE
+
+C     XXLINE  STRING
+C     NOFIX   NODE NUMBER ASSOCIATED WITH RESTRAINTED NODE POINT
+C     IFPRE   RESTRAINTED NODE RELATED TO THE DEGREES OF FREEDOM OF NODE
+C     NVFIX   NUMBER OF RESTRAINTED NODE POINTS
+C     MDOFN   MAXIMUM NUMBER OF DEGREE OF FREEDOM
+
+      IMPLICIT DOUBLE PRECISION (A-H,O-Z)
+
+      DIMENSION NOFIX(100),IFPRE(MDOFN,100)
+
+      CHARACTER XXLINE*250
+
+      NVFIX=NVFIX+1
+
+      READ(XXLINE,*) NOFIX(NVFIX)
+
+      CALL IREAD(XXLINE,'R=',2,IFPRE(1,NVFIX),MDOFN)
+
+      RETURN
+      END
+
+C********************************************************************
+      SUBROUTINE FRAME1(XXLINE,PROPS,MPROP,MMATS)
+C********************************************************************
+C *** THIS SUBROUTINE IS TO READ MATRIAL PROPERTY OF ELEMENT FROM INPUT FILE
+
+C     XXLINE  STRING
+C     PROPS   MATRIAL PROPERTIES
+
+      IMPLICIT DOUBLE PRECISION (A-H,O-Z)
+
+      DIMENSION PROPS(MPROP,MMATS),ITEMP(1)
+
+      CHARACTER XXLINE*250
+
+      CALL RNULV2(PROPS,MPROP,MMATS)
+
+      CALL IREAD(XXLINE,'NM=',3,ITEMP(1),1)
+
+      NMATS=ITEMP(1)
+
+      DO 100 IMATS=1,NMATS
+
+        PROPS( 9,IMATS)=1.0D20
+        PROPS(10,IMATS)=1.0D20
+        PROPS(11,IMATS)=1.0D20
+
+        CALL GETLINE(XXLINE)
+
+        CALL RREAD(XXLINE,'A=',2,PROPS(1,IMATS),1)
+        CALL RREAD(XXLINE,'I=',2,PROPS(2,IMATS),2)
+        CALL RREAD(XXLINE,'J=',2,PROPS(4,IMATS),1)
+        CALL RREAD(XXLINE,'E=',2,PROPS(5,IMATS),1)
+        CALL RREAD(XXLINE,'G=',2,PROPS(6,IMATS),1)
+
+        CALL RREAD(XXLINE,'AS=',3,PROPS( 7,IMATS),2)
+        CALL RREAD(XXLINE,'FY=',3,PROPS( 9,IMATS),1)
+        CALL RREAD(XXLINE,'ZP=',3,PROPS(10,IMATS),2)
+
+        CALL RREAD(XXLINE,'C1=',3,PROPS(13,IMATS),3)
+        CALL RREAD(XXLINE,'C2=',3,PROPS(16,IMATS),3)
+
+        CALL RREAD(XXLINE,'W=',2,PROPS(18,IMATS),1)   !S.S.MA 03.12.23
+
+  100 CONTINUE
+
+      RETURN
+      END
+
+C********************************************************************
+      SUBROUTINE FRAME2(NANAL,XXLINE,NOELE,MATNO,LNODS,LPCOD,LDOFS,
+     +                  LTYPE,MELEM,NELEM)
+C********************************************************************
+C *** THIS SUBROUTINE IS TO READ FRAME DATA BLOCK FROM INPUT FILE
+
+C     XXLINE STRING
+C     NOELE  ELEMENT NUMBER
+C     MATNO  IDENTIFICATION NUMBER OF MATRIAL PROPERTY OF ELEMENTS
+C     LNODS  NODAL CONNECTION NUMBERS OF ELEMENT
+C     LPCOD  CODE FOR DIRECT COSINE OF ELEMENT
+C     LDOFS  CODE FOR STATE OF DEGREE OF FREEDOM OF ELEMENT
+C     MELEM  MAXIMUM NUMBER OF ELEMENTS
+C     NELEM  NUMBER OF ELEMENTS
+
+      IMPLICIT DOUBLE PRECISION (A-H,O-Z)
+
+      DIMENSION NOELE(MELEM),MATNO(MELEM),LPCOD(MELEM)
+      DIMENSION LNODS(2,MELEM),LDOFS(12,MELEM),LTYPE(7,MELEM)
+
+      DIMENSION ITEMP(2)
+
+      CHARACTER XXLINE*250
+
+      NEVAB=12
+      NNODE=2
+
+      NELEM=NELEM+1
+
+      READ(XXLINE,*) NOELE(NELEM),(LNODS(INODE,NELEM),INODE=1,NNODE)
+
+C *** ELEMENT MATRIAL PROPERTY
+
+      CALL IREAD(XXLINE,'M=',2,MATNO(NELEM),1)
+
+C *** LP DATA OR K-NODE FOR DIRECTION COSINE
+
+      CALL IREAD(XXLINE,'LP=',3,ITEMP(1),2)
+
+      IF(ITEMP(1).NE.0.AND.ITEMP(2).EQ.0) THEN
+
+        IF(ITEMP(1).GE. 1.AND.ITEMP(1).LE. 3) LPCOD(NELEM)=-ITEMP(1)
+        IF(ITEMP(1).LE.-1.AND.ITEMP(1).GE.-3) LPCOD(NELEM)= ITEMP(1)-3
+
+      ELSE IF(ITEMP(1).EQ.0.AND.ITEMP(2).NE.0) THEN
+
+        LPCOD(NELEM)=ITEMP(2)
+
+      ELSE
+
+        WRITE(*,*) ' INPUT DATA - FRAME ERROR '
+        STOP
+
+      END IF
+
+C *** ELEMENT TYPE
+
+      CALL IREAD(XXLINE,'TYPE=',5,LTYPE(1,NELEM),3)
+
+      IF(LTYPE(1,NELEM).EQ.0) LTYPE(1,NELEM)=1
+      IF(LTYPE(2,NELEM).EQ.0) LTYPE(2,NELEM)=1
+
+C *** ELEMENT LDOFS
+
+      DO 200 I=1,NEVAB
+
+        LDOFS(I,NELEM)=0
+
+  200 CONTINUE
+
+      IF(NANAL.EQ.2)THEN   ! TRUSS ELEMENT
+
+        LDOFS( 4,NELEM)=1
+        LDOFS( 5,NELEM)=1
+        LDOFS( 6,NELEM)=1
+        LDOFS(10,NELEM)=1
+        LDOFS(11,NELEM)=1
+        LDOFS(12,NELEM)=1
+
+      END IF
+
+      IF(LTYPE(1,NELEM).EQ.2)THEN  ! TRUSS ELEMENT
+
+        LDOFS( 4,NELEM)=1
+        LDOFS( 5,NELEM)=1
+        LDOFS( 6,NELEM)=1
+        LDOFS(10,NELEM)=1
+        LDOFS(11,NELEM)=1
+        LDOFS(12,NELEM)=1
+
+      END IF
+
+      RETURN
+      END
+
+C********************************************************************
+      SUBROUTINE LOADS(XXLINE,NOLOD,NOLCS,RLOAD,MDOFN,NLOAD)
+C********************************************************************
+C *** THIS SUBROUTINE IS TO READ LOADS DATA BLOCK FROM INPUT FILE
+
+C     XXLINE    STRING
+C     NOLOD     NODE NUMBER ASSOCIATED WITH NODAL LOAD
+C     NOLCS     LOAD CASE NUMBER ASSOCIATED WITH NODAL LOAD
+C     RLOAD     NODAL LOAD RELATED TO THE DEGREES OF FREEDOM OF NODE
+C     MLOAD     MAXIMUM NUMBER OF NODAL LOADS
+C     NLOAD     NUMBER OF NODAL LOADS
+C     MDOFN     MAXIMUM NUMBER OF DEGREE OF FREEDOM OF NODE
+
+      IMPLICIT DOUBLE PRECISION (A-H,O-Z)
+
+      DIMENSION NOLOD(*),NOLCS(*),RLOAD(MDOFN,*)
+
+      CHARACTER XXLINE*250
+
+      NLOAD=NLOAD+1
+
+      READ(XXLINE,*) NOLOD(NLOAD)
+
+      CALL IREAD(XXLINE,'L=',2,NOLCS(NLOAD),1)
+
+      CALL RREAD(XXLINE,'F=',2,RLOAD(1,NLOAD),MDOFN)
+	
+      RETURN
+      END
+
+C********************************************************************
+      SUBROUTINE ASEMBL(ASTIF,NEQNS,NEVAB,LDOFS,ESTIF)
+C********************************************************************
+C *** THIS SUBROUTINE IS TO ASSEMBLE ELEMENT STIFFNESS MATRIX
+
+C     ASTIF   GLOBAL STIFFNESS MATRIX
+C     MTOTV   MAXIMUM NUMBER OF EQUATION
+C     NEQNS   NUMBER OF EQUATION
+C     NELEM   NUMBER OF ELEMENT
+C     NEVAB   NUMBER OF ELEMENT VARIABLES
+C     NNODE   NUMBER OF NODES PER ELEMENT
+C     LPROP   MATRIAL PROPERTY NUMBER OF ELEMENT
+C     LNODS   NODAL CONNECTION NUMBERS OF ELEMENT
+C     LDOFS   CODE FOR STATE OF DEGREE OF FREEDOM OF ELEMENT
+C     ELCOD   COORDINATE OF ELEMENT
+C     PROPS   MATRIAL PROPERTY OF ELEMENT
+C     ESTIF   ELEMENT STIFFNESS MATRIX
+
+      IMPLICIT DOUBLE PRECISION (A-H,O-Z)
+
+      DIMENSION ASTIF(*),ESTIF(12,12)
+      DIMENSION LDOFS(12)
+
+      DO 200 IEVAB = 1,NEVAB
+
+        IF (LDOFS(IEVAB).LE.0) GO TO 200
+
+        DO 100 JEVAB = 1,NEVAB
+
+          IF(LDOFS(JEVAB).LE.0) GO TO 100
+
+          ICD = LDOFS(JEVAB) - LDOFS(IEVAB) + 1
+
+          IF(ICD-1.LT.0) GO TO 100
+
+          IVAL=NEQNS*(ICD-1)+LDOFS(IEVAB)
+          ASTIF(IVAL) = ASTIF(IVAL) + ESTIF(IEVAB,JEVAB)
+
+  100   CONTINUE
+
+  200 CONTINUE
+
+      RETURN
+      END
+
+C********************************************************************
+      SUBROUTINE GETDEX(XXLINE,INDEX)
+C********************************************************************
+C *** THIS SUBROUTINE IS TO READ DATA BLOCK NAME FROM INPUT FILE
+C     AND RETURN INTEGER VALUE INDEX ASSOCIATED TO DATA BLOCK NAME
+
+C     XXLINE  STRING
+C     INDEX   CODE FOR DATA BLOCK
+
+      IMPLICIT DOUBLE PRECISION (A-H,O-Z)
+
+      CHARACTER XXLINE*250
+
+      CALL GETLINE(XXLINE)
+
+      IF(XXLINE(1:6).EQ.'SYSTEM')THEN
+         INDEX=1
+         CALL GETLINE(XXLINE)
+      ELSE IF(XXLINE(1:5).EQ.'JOINT')THEN
+         INDEX=2
+         CALL GETLINE(XXLINE)
+      ELSE IF(XXLINE(1:9).EQ.'RESTRAINT')THEN
+         INDEX=3
+         CALL GETLINE(XXLINE)
+      ELSE IF(XXLINE(1:5).EQ.'FRAME')THEN
+         INDEX=4
+         CALL GETLINE(XXLINE)
+      ELSE IF(XXLINE(1:4).EQ.'LOAD')THEN
+         INDEX=5
+         CALL GETLINE(XXLINE)
+      END IF
+
+      RETURN
+      END
+
+C********************************************************************
+      SUBROUTINE GETLINE(XXLINE)
+C********************************************************************
+C *** THIS SUBROUTINE IS TO READ ONE LINE FROM INPUT FILE
+C     AND RETURN STRING VARIABLE XXLINE
+
+C     XXLINE STRING
+
+      IMPLICIT DOUBLE PRECISION (A-H,O-Z)
+
+      CHARACTER XXLINE*250
+
+      XXLINE(241:241) = '/'
+
+      LEN=0
+
+      READ (5,'(240A1)',ERR=100) (XXLINE(I:I),I=1,240)
+
+      CALL STRLEN1(XXLINE,LEN)
+
+      DO WHILE (XXLINE(1:1).EQ.'C'.OR.LEN.EQ.0)
+
+        READ (5,'(240A1)',ERR=100) (XXLINE(I:I),I=1,240)
+
+        CALL STRLEN1(XXLINE,LEN)
+
+      END DO
+
+      J=0
+
+      DO 30 I=240,1,-1
+
+        IF (XXLINE(I:I).EQ.'!') J=I
+
+   30 CONTINUE
+
+      IF(J.NE.0) THEN
+
+      DO 20 I=J,241
+
+        XXLINE(I:I) = ' '
+
+   20 CONTINUE
+
+      END IF
+
+  100 RETURN
+      END
+
+C********************************************************************
+      SUBROUTINE STRLEN1(STRING,LENGTH)
+C********************************************************************
+C *** THIS SUBROUTINE IS TO FIND THE NUMBER OF CHARACTER FROM STRING
+C     AND RETURN INTEGER VARIABLE LENGTH
+
+C     STRING  STRING
+C     LENGTH  LENGTH OF STRING
+
+      IMPLICIT DOUBLE PRECISION (A-H,O-Z)
+
+      CHARACTER STRING*250
+
+      LENGTH=0
+
+      DO 100 I=1,239
+
+        IF(STRING(I:I).NE.' ') LENGTH=LENGTH+1
+
+  100 CONTINUE
+
+      RETURN
+      END
+
+C********************************************************************
+      SUBROUTINE IREAD(XXLINE,STRING,LENGTH,IARAY,INUMS)
+C********************************************************************
+C *** THIS SUBROUTINE IS TO READ INTEGER DATA FROM STRING VARIABLE STRING
+
+C     XXLINE  STRING
+C     STRING  STRING
+C     LENGTH  LENGTH OF STRING
+C     IARAY   VARIABLE TO BE READ
+C     INUMS   NUMBER OF VARIABLE TO BE READ
+
+      IMPLICIT DOUBLE PRECISION (A-H,O-Z)
+
+      DIMENSION IARAY(INUMS)
+
+      CHARACTER XXLINE*250,XYLINE*250,STRING*250
+
+      XYLINE=XXLINE
+
+      NPOST=INDEX(XYLINE,STRING(1:LENGTH))
+
+      IF(NPOST.GE.1)THEN
+
+        NPOST=NPOST+LENGTH-1
+
+        DO 100 I=1,NPOST
+
+          XYLINE(I:I)=' '
+
+  100   CONTINUE
+
+        READ(XYLINE,*,ERR=200) (IARAY(I),I=1,INUMS)
+
+      END IF
+
+  200 CONTINUE
+
+      RETURN
+      END
+
+C********************************************************************
+      SUBROUTINE RREAD(XXLINE,STRING,LENGTH,RARAY,INUMS)
+C********************************************************************
+C *** THIS SUBROUTINE IS TO READ REAL DATA FROM STRING VARIABLE STRING
+
+C     XXLINE  STRING
+C     STRING  STRING
+C     LENGTH  LENGTH OF STRING
+C     IARAY   VARIABLE TO BE READ
+C     INUMS   NUMBER OF VARIABLE TO BE READ
+
+      IMPLICIT DOUBLE PRECISION (A-H,O-Z)
+
+      DIMENSION RARAY(INUMS)
+
+      CHARACTER XXLINE*250,XYLINE*250,STRING*250
+
+      XYLINE=XXLINE
+
+      NPOST=INDEX(XYLINE,STRING(1:LENGTH))
+
+      IF(NPOST.GE.1)THEN
+
+        NPOST=NPOST+LENGTH-1
+
+        DO 100 I=1,NPOST
+
+          XYLINE(I:I)=' '
+
+  100   CONTINUE
+
+        READ(XYLINE,*,ERR=200) (RARAY(I),I=1,INUMS)
+
+      END IF
+
+  200 CONTINUE
+
+      RETURN
+      END
+
+C********************************************************************
+      SUBROUTINE MUL2T2(RAMAT,RBMAT,RCMAT,NAMAT,NBMAT,NCMAT)
+C********************************************************************
+C *** THIS SUBROUTINE IS TO FIND MATRIX PRODUCT
+C     RAMAT = RBMAT TRANSPOSE *  RCMAT
+
+      IMPLICIT DOUBLE PRECISION (A-H,O-Z)
+
+      DIMENSION RAMAT(NAMAT,NCMAT),RBMAT(NBMAT,NAMAT),RCMAT(NBMAT,NCMAT)
+
+      DO 100 IAVAB=1,NAMAT
+      DO 100 ICVAB=1,NCMAT
+
+        RAMAT(IAVAB,ICVAB)=0.0D0
+
+        DO 100 IBVAB=1,NBMAT
+
+          RAMAT(IAVAB,ICVAB)=RAMAT(IAVAB,ICVAB)
+     +                      +RBMAT(IBVAB,IAVAB)*RCMAT(IBVAB,ICVAB)
+
+  100 CONTINUE
+
+      RETURN
+      END
+
+C********************************************************************
+      SUBROUTINE MULT22(RAMAT,RBMAT,RCMAT,NAMAT,NBMAT,NCMAT)
+C********************************************************************
+C *** THIS SUBROUTINE IS TO FIND MATRIX PRODUCT
+C     RAMAT = RBMAT *  RCMAT
+
+      IMPLICIT DOUBLE PRECISION (A-H,O-Z)
+
+      DIMENSION RAMAT(NAMAT,NCMAT),RBMAT(NAMAT,NBMAT),RCMAT(NBMAT,NCMAT)
+
+      DO 100 IAVAB=1,NAMAT
+      DO 100 ICVAB=1,NCMAT
+
+        RAMAT(IAVAB,ICVAB)=0.0D0
+
+        DO 100 IBVAB=1,NBMAT
+
+          RAMAT(IAVAB,ICVAB)=RAMAT(IAVAB,ICVAB)
+     +                      +RBMAT(IAVAB,IBVAB)*RCMAT(IBVAB,ICVAB)
+
+  100 CONTINUE
+
+      RETURN
+      END
+
+C********************************************************************
+      SUBROUTINE MULT21(RAMAT,RBMAT,RCMAT,NAMAT,NBMAT)
+C********************************************************************
+C *** THIS SUBROUTINE IS TO FIND MATRIX PRODUCT
+C     RAMAT = RBMAT *  RCMAT
+
+      IMPLICIT DOUBLE PRECISION (A-H,O-Z)
+
+      DIMENSION RAMAT(NAMAT),RBMAT(NAMAT,NBMAT),RCMAT(NBMAT)
+
+      DO 100 IAVAB=1,NAMAT
+
+        RAMAT(IAVAB)=0.0D0
+
+        DO 100 IBVAB=1,NBMAT
+
+          RAMAT(IAVAB)=RAMAT(IAVAB)+RBMAT(IAVAB,IBVAB)*RCMAT(IBVAB)
+
+  100 CONTINUE
+
+      RETURN
+      END
+
+C********************************************************************
+      SUBROUTINE MUL2T1(RAMAT,RBMAT,RCMAT,NAMAT,NBMAT)
+C********************************************************************
+C *** THIS SUBROUTINE IS TO FIND MATRIX PRODUCT
+C     RAMAT = RBMAT TRNASPOSE *  RCMAT
+
+      IMPLICIT DOUBLE PRECISION (A-H,O-Z)
+
+      DIMENSION RAMAT(NAMAT),RBMAT(NBMAT,NAMAT),RCMAT(NBMAT)
+
+      DO 100 IAVAB=1,NAMAT
+
+        RAMAT(IAVAB)=0.0D0
+
+        DO 100 IBVAB=1,NBMAT
+
+          RAMAT(IAVAB)=RAMAT(IAVAB)+RBMAT(IBVAB,IAVAB)*RCMAT(IBVAB)
+
+  100 CONTINUE
+
+      RETURN
+      END
+
+C********************************************************************
+      SUBROUTINE RNULV2(RAMAT,NAMAT,NBMAT)
+C********************************************************************
+C *** THIS SUBROUTINE IS TO INITIALIZE RAMAT MATRIX
+
+      IMPLICIT DOUBLE PRECISION (A-H,O-Z)
+
+      DIMENSION RAMAT(NAMAT,NBMAT)
+
+      DO 100 IAVAB=1,NAMAT
+      DO 100 IBVAB=1,NBMAT
+
+        RAMAT(IAVAB,IBVAB)=0.0D0
+
+  100 CONTINUE
+
+      RETURN
+      END
+
+C********************************************************************
+      SUBROUTINE RNULV1(RAMAT,NAMAT)
+C********************************************************************
+C *** THIS SUBROUTINE IS TO INITIALIZE RAMAT VECTOR
+
+      IMPLICIT DOUBLE PRECISION (A-H,O-Z)
+
+      DIMENSION RAMAT(NAMAT)
+
+      DO 100 IAVAB=1,NAMAT
+
+        RAMAT(IAVAB)=0.0D0
+
+  100 CONTINUE
+
+      RETURN
+      END
+
+C********************************************************************
+      SUBROUTINE INULV1(KAMAT,NAMAT)
+C********************************************************************
+C *** THIS SUBROUTINE IS TO INITIALIZE KAMAT VECTOR
+
+      IMPLICIT DOUBLE PRECISION (A-H,O-Z)
+
+      DIMENSION KAMAT(NAMAT)
+
+      DO 100 IAVAB=1,NAMAT
+
+        KAMAT(IAVAB)=0
+
+  100 CONTINUE
+
+      RETURN
+      END
+
